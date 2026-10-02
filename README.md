@@ -15,4 +15,4 @@ The direct server reads `TYPESAFE_API_KEY` from its environment. Never commit cr
 
 See [specification](SPEC.md), [domain context](CONTEXT.md), [Choice contract](tasks/issue-2-contract.md), and [validation report](docs/issue-2-validation.md).
 
-[Issue tracker](https://github.com/striges88-bit/jev-codex-experiment/issues): issue #2 is accepted; Desktop dispatch/global installation, filtering, scoring and calibration remain separate work. Real-context transmission requires the planned provider privacy/retention review. Actual context filtering requires separate user confirmation after comparison.
+[Issue tracker](https://github.com/striges88-bit/jev-codex-experiment/issues): issues #2 and #3 are accepted. Global MCP registration and actual Choice-selected Desktop subagent dispatch were verified; see the [Desktop validation report](docs/issue-3-validation.md). Filtering, scoring and calibration remain separate work. Real-context transmission requires the planned provider privacy/retention review. Actual context filtering requires separate user confirmation after comparison.
