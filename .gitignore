@@ -1,0 +1,20 @@
+# Publish only the reviewed code and public documentation.
+/*
+!/.gitignore
+!/.gitattributes
+!/README.md
+!/package.json
+!/SPEC.md
+!/CONTEXT.md
+!/integration/
+!/docs/
+/docs/*
+!/docs/issue-2-validation.md
+!/tasks/
+/tasks/*
+!/tasks/issue-2-contract.md
+!/tasks/issue-2-source-manifest.json
+/integration/node_modules/
+/integration/*.clixml
+/integration/.env*
+*.log

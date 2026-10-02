@@ -1,0 +1,46 @@
+[
+  {
+    "file": "budget.mjs",
+    "sha256": "5f80098c3b3920e3c696fdad5900dfd8c89095aaa656f6a46a09d240d2c8f6dd"
+  },
+  {
+    "file": "choice.mjs",
+    "sha256": "72d80e8bc5cc80adf16183b7fde90ff5f6a98df2d3cb3fd8e31e4a018c043923"
+  },
+  {
+    "file": "choice.test.mjs",
+    "sha256": "94f4eae4c1ea19078ec1cc10ec451af8923c0af7776dad4633a0a8745653bf08"
+  },
+  {
+    "file": "launch.ps1",
+    "sha256": "dc381fbaa75431685afc3c22f1888eb8ffc194f7549d2082deabba5684a90c55"
+  },
+  {
+    "file": "live-smoke.mjs",
+    "sha256": "083bf8776b31a0801713ac45622f5a478da3232795a31252c9713730e5e6ae94"
+  },
+  {
+    "file": "mcp.mjs",
+    "sha256": "4826efe3b24dfde95a82c8b3387ab2c1c0f51aa86cf404eb0267e1ced905f9c0"
+  },
+  {
+    "file": "process-client.mjs",
+    "sha256": "1c033d7ce561d964e9343dc8c2827d12b99e5fb70e90a758a6e625cc12c50ef4"
+  },
+  {
+    "file": "process.test.mjs",
+    "sha256": "4843d50c804ea342fc1d5fd9e4e8635f0ef236af22871a4f1c95b62be465b9db"
+  },
+  {
+    "file": "README.md",
+    "sha256": "babdaaaa8afb590476ece4d2588530a66d5295431c3afc17f9b8cc5320b8c4b2"
+  },
+  {
+    "file": "schema.mjs",
+    "sha256": "489cc9a363ceee0614cb8981cbe52c905b1693225b81e226d72f76ead42cf28d"
+  },
+  {
+    "file": "transport.mjs",
+    "sha256": "ea207e11ba573b3639cf7706450858747d5ebe6c86347af774cd794960c5f405"
+  }
+]
