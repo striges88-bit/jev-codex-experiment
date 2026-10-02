@@ -2,7 +2,7 @@ import { pathToFileURL } from 'node:url';
 import { createChoice } from './choice.mjs';
 import { schemas } from './schema.mjs';
 
-const names = ['jev_begin_subtask', 'jev_choice', 'jev_end_subtask', 'jev_shadow_filter'];
+const names = ['jev_begin_subtask', 'jev_choice', 'jev_end_subtask', 'jev_shadow_filter', 'jev_evaluate'];
 export function serve({ input = process.stdin, output = process.stdout, ...options } = {}) {
   const choice = createChoice(options);
   const active = new Map();

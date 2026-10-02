@@ -17,9 +17,15 @@ schemas.jev_shadow_filter = object({
     kind: { type: 'string', enum: ['instruction', 'requirement', 'unfinished', 'reference'] },
   }) },
 });
+schemas.jev_evaluate = object({
+  ...schemas.jev_shadow_filter.properties,
+  material: object({answer:string, baseline:{type:['string','null'],minLength:1},
+    diff:{type:['string','null'],minLength:1}, checks:{type:['string','null'],minLength:1}}),
+});
 const exact = (value, keys) => value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 const nonempty = value => typeof value === 'string' && value.trim().length > 0;
 const secret = /-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(?:ghp_|github_pat_|sk-)[A-Za-z0-9_-]{20,}|\bBearer\s+\S+|\b(?:api[_-]?key|password|passwd|secret|token|authorization|cookie|credential)\s*[:=]\s*\S+/i;
+export const secretSuspected = (text, apiKey) => secret.test(text) || Boolean(apiKey && text.includes(apiKey));
 export function validate(name, args, apiKey) {
   if (!args || typeof args !== 'object' || Array.isArray(args)) return 'invalid_request';
   if (args.schema_version !== 1) return 'unsupported_schema';
@@ -36,11 +42,17 @@ export function validate(name, args, apiKey) {
   if (Object.values(args.task).some(value => Buffer.byteLength(value) > 2048)) return 'input_limit';
   const seen = new Set(), texts = Object.values(args.task);
   for (const item of args.context) {
-    if (!exact(item, name === 'jev_shadow_filter' ? ['id', 'text', 'protected', 'kind'] : ['id', 'text', 'protected']) || typeof item.id !== 'string' || !/^[A-Za-z0-9_.:-]{1,64}$/.test(item.id) ||
+    if (!exact(item, ['jev_shadow_filter','jev_evaluate'].includes(name) ? ['id', 'text', 'protected', 'kind'] : ['id', 'text', 'protected']) || typeof item.id !== 'string' || !/^[A-Za-z0-9_.:-]{1,64}$/.test(item.id) ||
         seen.has(item.id) || !nonempty(item.text) || typeof item.protected !== 'boolean') return 'invalid_request';
     seen.add(item.id); texts.push(item.id, item.text);
-    if (name === 'jev_shadow_filter' && (!['instruction', 'requirement', 'unfinished', 'reference'].includes(item.kind) ||
+    if (['jev_shadow_filter','jev_evaluate'].includes(name) && (!['instruction', 'requirement', 'unfinished', 'reference'].includes(item.kind) ||
         (item.kind !== 'reference' && !item.protected))) return 'invalid_request';
+  }
+  if (name === 'jev_evaluate') {
+    if (!exact(args.material,['answer','baseline','diff','checks']) || !nonempty(args.material.answer) ||
+        !Object.values(args.material).every(value=>value===null||nonempty(value))) return 'invalid_request';
+    texts.push(...Object.values(args.material).filter(value=>value!==null));
+    if (secretSuspected(encoded,apiKey)) return 'secret_suspected';
   }
   if (texts.some(value => secret.test(value) || (apiKey && value.includes(apiKey)))) return 'secret_suspected';
   return null;

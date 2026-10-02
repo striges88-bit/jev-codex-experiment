@@ -1,6 +1,6 @@
 # Jev Choice MCP v1
 
-Local experimental stdio MCP. Four tools: `jev_begin_subtask`, `jev_choice`, `jev_end_subtask`, `jev_shadow_filter`. The original three v1 payloads are unchanged.
+Local experimental stdio MCP. Five tools: `jev_begin_subtask`, `jev_choice`, `jev_end_subtask`, `jev_shadow_filter`, `jev_evaluate`. The original four v1 payloads are unchanged.
 Keep the server-generated subtask ID and the same server instance throughout a bounded task. A selected result is advisory data; the caller applies model/effort under its current AGENTS instructions. Restarted, expired or closed IDs cannot resume their budget.
 
 Run offline: `npm test`.
@@ -18,7 +18,7 @@ Only two profiles exist: `luna_max` = `gpt-6-luna/max`, `sol_low` = `gpt-6.1-sol
 
 Token fields `usage.input_tokens` and `usage.output_tokens` are supported by the [official TypeSafe SDK](https://github.com/typesafe-ai/typesafe-sdk-js/blob/main/src/types.ts) and [API reference](https://api.typesafe.ai/redoc), checked 2026-10-02. Only nonnegative safe integers are exposed; unavailable or invalid values are null. Cost and subagent runtime remain null. Usage is per call, budgets are cumulative. The smoke script explicitly saves only the allowlisted public result.
 
-Design source: tasks/issue-2-contract.md and pinned audited upstream `eeb9f19d055f92b854bb21c9483fbb7fc74c963c`. The prior adapter stays separate and testable. Provider retention, general filter reliability and scoring remain unestablished.
+Design source: tasks/issue-2-contract.md and pinned audited upstream `eeb9f19d055f92b854bb21c9483fbb7fc74c963c`. The prior adapter stays separate and testable. Provider retention, general filter reliability and scoring calibration remain unestablished.
 
 ## Shadow filter v1
 
@@ -29,3 +29,21 @@ Noul answers map directly to `p_unneeded`, independently of confidence. Results 
 Question packets contain at most eight questions and a serialized POST of at most 12000 UTF-8 bytes including full state and rubric overhead. Packets are planned before sending; an impossible single-question packet rejects with `input_limit`. The entire plan must fit the same remaining requests budget as Choice before the first HTTP. One shadow call holds the owner queue across all packets. Time, cancellation and owner availability are rechecked before every attempt. No automatic retry, caching, exactly-once or durable resume is provided; repeats spend the remaining budget. Invalid/missing/extra answers or out-of-range Noul return `invalid_noul`. Transport/lifecycle errors keep their existing codes with shadow fallback action `preserve_full_context`.
 
 `shadow-context.mjs` returns a copy of the complete launch inventory for success, fallback and unavailable MCP. It never applies recommendations. `choiceContext` projects only the old `{id,text,protected}` metadata shape for Choice without changing text, order or protection. The caller retains source originals. Shared budget counters are cumulative; measurements cover only this call. Token totals require valid usage on every started packet, otherwise null; cost/runtime stay null.
+
+## Completed result evaluation v1
+
+`jev_evaluate` accepts the shadow task/context inventory plus required `material:{answer,baseline,diff,checks}`. Answer is a nonempty string; other fields are nonempty snapshots or null for unavailable evidence. The caller collects the full available context and snapshots, checks provenance and preserves originals. Local evidence paths are not automatically sent. Server reads no files, executes no commands and launches no agents.
+
+Three Score dimensions (correctness/completeness/verification) use fixed five-level `quality-v1` rubrics, raw0..4 and normalized raw/4, without a quality gate. Five positive Noul questions return `p_compliant`, independently of confidence or local `pass`. Each tool invariant starts with `pass:null,status:unknown,evidence:[]`. Complete estimates have `status:estimated`; failure produces all-unknown estimates and `return_to_main_agent`. A late bad packet discards all earlier estimates.
+
+Score validates the exact local legend/distribution keys, finite bounds and required confidence. Probability sum tolerance is1e-6. User-approved wire compatibility permits absolute raw-versus-weighted discrepancy up to0.055 (+1e-12 numerical epsilon); raw score, allowlisted probabilities and explicit consistency diagnostic are retained. This local policy accommodates possible rounding; it does not prove provider precision or accuracy and does not affect fact acceptance. See [TypeSafe API](https://docs.typesafe.ai/api) and [validation](../docs/issue-5-validation.md).
+
+All eight questions share one POST when it fits. Under pressure only questions split; every packet preserves identical full task/context/material. Existing bounds, fixed model/endpoint, deadlines, cancellation and same Choice/shadow budget apply. Final serialized POST receives another secret preflight. Call measurements, cumulative owner counters and local coordinator aggregation remain separate; unknown usage/cost/runtime is null.
+
+`createAssessmentCoordinator` in `assessment.mjs` is a trusted local main-agent workflow. It accepts `client.call`, actual `review`, `authorizeRepair`, `remainingBudget` and bounded `repair` callbacks. `review` reads and checks local sources, returns a snapshot-bound main-agent review, observed/expected facts, coverage and hash-matched evidence. Helper validates shape/binding, not the truth of human claims. Assertions inside tool args or a subagent's result cannot bypass this callback. Incomplete positive coverage stays unknown; a verified counterexample suffices for violation. Missing commands in an incomplete log do not prove failure.
+
+Only confirmed violation with authority and a rechecked remaining budget can call repair. One callback handles all violations; full task/context and ID must be preserved. Changed material receives a new evaluation/review. Repeated violation, unknown, callback failure, unavailable provider/budget or changed scope hands back to main. Low Score cannot trigger repair. The process-local registry retains one terminal outcome per subtask ID across coordinator creations/concurrent calls, capped at4096 entries with fail-closed capacity. It does not provide durable/exactly-once recovery. `run(args,{continuity:'fresh'})` is authorized only immediately after a verified fresh begin; unverified restart continuity cannot repair. A new begin is never a budget/repair bypass.
+
+`remainingBudget` is a trusted current-owner getter (`createChoice().remainingBudget` for local embedding). For an exclusively owned serial stdio workflow, the caller may retain the latest actual owner snapshot, as the synthetic smoke does; it must not treat a stale snapshot with competing calls as current. Re-evaluation rechecks the server budget again and rejects oversized revised packets. Subagent runtime stays unknown/null when unavailable. Generic `repair_runtime` measures callback elapsed time, labeled an upper bound and separate from TypeSafe wait; a local callback is not reported as native subagent runtime. No inferred price is reported.
+
+Run explicitly synthetic live Score/Noul and actual local repair: `node integration/evaluate-live-smoke.mjs`. It seeds incorrect JSON5, records a failing arithmetic check, makes one bounded actual correction to4, checks the unrelated sentinel, re-evaluates and closes owner in finally. It writes ignored sanitized evidence. This proves a local repair executor; it does not claim a new native subagent launch or privacy/calibration acceptance.

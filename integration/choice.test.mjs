@@ -57,7 +57,7 @@ test('C01: initialize/list/begin/Choice exposes only the two profiles', async ()
   const c = client({ fetchImpl: async () => { count++; return Response.json(answer(selected)); } });
   try {
     assert.equal((await c.request('initialize', { protocolVersion: '2024-11-05' })).result.protocolVersion, '2024-11-05');
-    assert.deepEqual((await c.request('tools/list')).result.tools.map(x => x.name), ['jev_begin_subtask', 'jev_choice', 'jev_end_subtask', 'jev_shadow_filter']);
+    assert.deepEqual((await c.request('tools/list')).result.tools.map(x => x.name), ['jev_begin_subtask', 'jev_choice', 'jev_end_subtask', 'jev_shadow_filter', 'jev_evaluate']);
     const opened = await c.call('jev_begin_subtask', { schema_version: 1 });
     assert.match(opened.subtask_id, /^[a-f0-9]{32}$/);
     const args = { schema_version: 1, subtask_id: opened.subtask_id, task, context: [] };
