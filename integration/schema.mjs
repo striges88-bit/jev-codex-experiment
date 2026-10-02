@@ -1,3 +1,5 @@
+import { contextBinding } from './context-binding.mjs';
+
 const string = { type: 'string', minLength: 1 };
 const object = properties => ({ type: 'object', properties, required: Object.keys(properties), additionalProperties: false });
 const version = { type: 'integer', const: 1 };
@@ -22,6 +24,17 @@ schemas.jev_evaluate = object({
   material: object({answer:string, baseline:{type:['string','null'],minLength:1},
     diff:{type:['string','null'],minLength:1}, checks:{type:['string','null'],minLength:1}}),
 });
+schemas.jev_filter_context = object({
+  ...schemas.jev_shadow_filter.properties,
+  policy: object({
+    approval_id: { type: 'string', pattern: '^[A-Za-z0-9_.:-]{1,64}$' },
+    revision: { type: 'integer', minimum: 1 },
+    manifest_sha256: { type: 'string', pattern: '^[a-f0-9]{64}$' },
+    binding_sha256: { type: 'string', pattern: '^[a-f0-9]{64}$' },
+    threshold: { type: 'number', const: 0.80 },
+    allowed_fragment_ids: { type: 'array', maxItems: 64, uniqueItems: true, items: { type: 'string', pattern: '^[A-Za-z0-9_.:-]{1,64}$' } },
+  }),
+});
 const exact = (value, keys) => value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 const nonempty = value => typeof value === 'string' && value.trim().length > 0;
 const secret = /-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(?:ghp_|github_pat_|sk-)[A-Za-z0-9_-]{20,}|\bBearer\s+\S+|\b(?:api[_-]?key|password|passwd|secret|token|authorization|cookie|credential)\s*[:=]\s*\S+/i;
@@ -42,11 +55,23 @@ export function validate(name, args, apiKey) {
   if (Object.values(args.task).some(value => Buffer.byteLength(value) > 2048)) return 'input_limit';
   const seen = new Set(), texts = Object.values(args.task);
   for (const item of args.context) {
-    if (!exact(item, ['jev_shadow_filter','jev_evaluate'].includes(name) ? ['id', 'text', 'protected', 'kind'] : ['id', 'text', 'protected']) || typeof item.id !== 'string' || !/^[A-Za-z0-9_.:-]{1,64}$/.test(item.id) ||
+    if (!exact(item, ['jev_shadow_filter','jev_evaluate','jev_filter_context'].includes(name) ? ['id', 'text', 'protected', 'kind'] : ['id', 'text', 'protected']) || typeof item.id !== 'string' || !/^[A-Za-z0-9_.:-]{1,64}$/.test(item.id) ||
         seen.has(item.id) || !nonempty(item.text) || typeof item.protected !== 'boolean') return 'invalid_request';
     seen.add(item.id); texts.push(item.id, item.text);
-    if (['jev_shadow_filter','jev_evaluate'].includes(name) && (!['instruction', 'requirement', 'unfinished', 'reference'].includes(item.kind) ||
+    if (['jev_shadow_filter','jev_evaluate','jev_filter_context'].includes(name) && (!['instruction', 'requirement', 'unfinished', 'reference'].includes(item.kind) ||
         (item.kind !== 'reference' && !item.protected))) return 'invalid_request';
+  }
+  if (name === 'jev_filter_context') {
+    const policy = args.policy;
+    if (!exact(policy, ['approval_id','revision','manifest_sha256','binding_sha256','threshold','allowed_fragment_ids']) ||
+        typeof policy.approval_id !== 'string' || !/^[A-Za-z0-9_.:-]{1,64}$/.test(policy.approval_id) ||
+        !Number.isSafeInteger(policy.revision) || policy.revision < 1 || policy.threshold !== 0.80 ||
+        ![policy.manifest_sha256,policy.binding_sha256].every(value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value)) ||
+        !Array.isArray(policy.allowed_fragment_ids) || policy.allowed_fragment_ids.length > 64 ||
+        new Set(policy.allowed_fragment_ids).size !== policy.allowed_fragment_ids.length ||
+        !policy.allowed_fragment_ids.every(id => args.context.some(item => item.id === id && !item.protected && item.kind === 'reference'))) return 'invalid_policy';
+    if (secretSuspected(encoded,apiKey)) return 'secret_suspected';
+    if (policy.binding_sha256 !== contextBinding(args.task,args.context)) return 'binding_mismatch';
   }
   if (name === 'jev_evaluate') {
     if (!exact(args.material,['answer','baseline','diff','checks']) || !nonempty(args.material.answer) ||

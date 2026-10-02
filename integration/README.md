@@ -1,6 +1,6 @@
 # Jev Choice MCP v1
 
-Local experimental stdio MCP. Five tools: `jev_begin_subtask`, `jev_choice`, `jev_end_subtask`, `jev_shadow_filter`, `jev_evaluate`. The original four v1 payloads are unchanged.
+Local experimental stdio MCP. Six tools: `jev_begin_subtask`, `jev_choice`, `jev_end_subtask`, `jev_shadow_filter`, `jev_evaluate`, `jev_filter_context`. The five pre-filter v1 payloads are unchanged.
 Keep the server-generated subtask ID and the same server instance throughout a bounded task. A selected result is advisory data; the caller applies model/effort under its current AGENTS instructions. Restarted, expired or closed IDs cannot resume their budget.
 
 Run offline: `npm test`.
@@ -33,6 +33,16 @@ Question packets contain at most eight questions and a serialized POST of at mos
 ## Completed result evaluation v1
 
 `jev_evaluate` accepts the shadow task/context inventory plus required `material:{answer,baseline,diff,checks}`. Answer is a nonempty string; other fields are nonempty snapshots or null for unavailable evidence. The caller collects the full available context and snapshots, checks provenance and preserves originals. Local evidence paths are not automatically sent. Server reads no files, executes no commands and launches no agents.
+
+## Scoped opt-in context filter v1
+
+`jev_filter_context` adds required `policy:{approval_id,revision,manifest_sha256,binding_sha256,threshold,allowed_fragment_ids}` to the shadow inventory. Threshold is exactly 0.80. Approval ID is a safe identifier, revision a positive safe integer, hashes lowercase SHA256; allowed IDs must be unique unprotected references in this inventory. Unknown fields or versions, invalid policy, binding mismatch or suspected secrets reject before HTTP without reflecting IDs. Binding is UTF-8 SHA256 of fixed-key JSON `{task:{goal,scope,done_when},context:[{id,text,protected,kind}]}` in original order without text normalization; `context-binding.mjs` is shared by caller/server.
+
+The tool reuses the unchanged full-state Noul planner, transport, owner queue and per-owner budgets. It scores all unprotected references, but recommends exclusion only for allowed IDs at `p_unneeded >= 0.80`. Complete output is `filter_complete/mode:opt_in/context_action:select_allowed/applied:false`; errors discard every estimate and preserve full context. The tool validates policy consistency, not human authority, and never launches an agent. Legacy shadow stays 0.9/applied:false/full.
+
+`createContextAuthorization` accepts exact human-reviewed manifest bytes, starts disabled, and only a trusted local coordinator may authorize after material/privacy/provenance approval. State is process-local; restart starts disabled. The manifest binds six exact task/context inventories and their allowed references. Task/provider data cannot enable it. `prepareContextDispatch` checks the scoped policy, complete ordered recommendations, selected valid Choice profile and owner. Its single-use `dispatch(callback)` rechecks revision/enabled/binding/owner immediately before invoking the native adapter callback; it exposes no reusable filtered dispatch copy. Revoke or unknown state passes original context to that callback. The adapter must launch synchronously at that boundary, preserve the supplied copy, retain full originals, and verify actual profile/context/workdir after launch. The consumer receipt records hashes/IDs/probabilities and selection, with unknown actual profile/runtime/cost until independently verified.
+
+Applicability is the approved six frozen synthetic families from #6 only. The scoped #7 proof is limited to two native launches, three total HTTP and 30 seconds total provider wait; the trusted coordinator must enforce those aggregate caps in addition to the server's per-owner limits. No real-context rollout or activation is implied by installing the tool. Native proof, exact material approval and final acceptance remain separate gates.
 
 Three Score dimensions (correctness/completeness/verification) use fixed five-level `quality-v1` rubrics, raw0..4 and normalized raw/4, without a quality gate. Five positive Noul questions return `p_compliant`, independently of confidence or local `pass`. Each tool invariant starts with `pass:null,status:unknown,evidence:[]`. Complete estimates have `status:estimated`; failure produces all-unknown estimates and `return_to_main_agent`. A late bad packet discards all earlier estimates.
 

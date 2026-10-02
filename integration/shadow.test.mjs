@@ -64,7 +64,7 @@ test('S01/S02/S03: external shadow Noul mapping, threshold and protected invento
   }});
   try {
     const names=(await c.request('tools/list')).result.tools.map(x=>x.name);
-    assert.deepEqual(names,['jev_begin_subtask','jev_choice','jev_end_subtask','jev_shadow_filter','jev_evaluate']);
+    assert.deepEqual(names,['jev_begin_subtask','jev_choice','jev_end_subtask','jev_shadow_filter','jev_evaluate','jev_filter_context']);
     const args=await open(c), r=await c.call('jev_shadow_filter',args);
     assert.equal(r.status,'shadow_complete'); assert.equal(r.mode,'shadow'); assert.equal(r.applied,false);
     assert.equal(r.threshold,0.9); assert.equal(r.context_action,'preserve_full'); assert.equal(r.fallback,null);

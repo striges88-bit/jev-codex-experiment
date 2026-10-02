@@ -3,6 +3,7 @@ import { createBudget, snapshot } from './budget.mjs';
 import { createTransport } from './transport.mjs';
 import { createShadow } from './shadow.mjs';
 import { createEvaluation } from './evaluate.mjs';
+import { createFilter } from './filter.mjs';
 
 const profiles = Object.freeze({
   luna_max: Object.freeze({ id: 'luna_max', model: 'gpt-6-luna', effort: 'max' }),
@@ -25,6 +26,7 @@ export function createChoice({ apiKey = '', fetchImpl = globalThis.fetch, now = 
   const transport = createTransport({ apiKey, fetchImpl, setTimer, clearTimer });
   const shadow = createShadow({ apiKey, budget, transport, now });
   const evaluate = createEvaluation({ apiKey, budget, transport, now });
+  const filter = createFilter({ apiKey, budget, transport, now });
   const fallback = (id, code, entry = budget.get(id), measured = { jev_requests: 0, jev_latency_ms: 0 }) => ({
     schema_version: 1, subtask_id: typeof id === 'string' && /^[a-f0-9]{32}$/.test(id) && !(apiKey && id.includes(apiKey)) ? id : null,
     status: 'fallback', profile: null, fallback: { code, action: 'follow_current_agents' },
@@ -37,6 +39,7 @@ export function createChoice({ apiKey = '', fetchImpl = globalThis.fetch, now = 
     async call(name, args, signal) {
       if (name === 'jev_shadow_filter') return shadow(args, signal);
       if (name === 'jev_evaluate') return evaluate(args, signal);
+      if (name === 'jev_filter_context') return filter(args, signal);
       const invalid = validate(name, args, apiKey);
       if (invalid) return fallback(args?.subtask_id, invalid);
       if (name === 'jev_begin_subtask') {
