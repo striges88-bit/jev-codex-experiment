@@ -1,3 +1,4 @@
+import { requestBytes } from './limits.mjs';
 import { validate } from './schema.mjs';
 import { createBudget, snapshot } from './budget.mjs';
 import { createTransport } from './transport.mjs';
@@ -61,7 +62,7 @@ export function createChoice({ apiKey = '', fetchImpl = globalThis.fetch, now = 
           sol_low: 'gpt-6.1-sol/low. Use for compound or complex bounded work: interacting requirements, cross-module reasoning, ambiguous diagnosis, architecture or security analysis with multiple constraints. Reserve this profile when the simple-task criteria do not fit or additional reasoning capability is needed.',
         },
       } } });
-      if (Buffer.byteLength(body) > 12000) return fallback(id, 'input_limit', entry);
+      if (Buffer.byteLength(body) > requestBytes) return fallback(id, 'input_limit', entry);
       return budget.run(id, async entry => {
         if (!entry) return fallback(id, 'lifecycle_unavailable');
         if (signal?.aborted) return fallback(id, 'cancelled', entry);

@@ -1,3 +1,4 @@
+import { requestBytes } from './limits.mjs';
 import { validate, secretSuspected } from './schema.mjs';
 import { snapshot } from './budget.mjs';
 
@@ -38,9 +39,9 @@ function packetPlan(args) {
   const result=[]; let group={};
   for(const [key,question] of Object.entries(questions)) {
     const next={...group,[key]:question};
-    if(Buffer.byteLength(encode(next))>12000 || Object.keys(next).length>8) {
+    if(Buffer.byteLength(encode(next))>requestBytes || Object.keys(next).length>8) {
       if(Object.keys(group).length)result.push({body:encode(group),keys:Object.keys(group)});
-      group={[key]:question}; if(Buffer.byteLength(encode(group))>12000)return null;
+      group={[key]:question}; if(Buffer.byteLength(encode(group))>requestBytes)return null;
     } else group=next;
   }
   if(Object.keys(group).length)result.push({body:encode(group),keys:Object.keys(group)});

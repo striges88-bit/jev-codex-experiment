@@ -64,7 +64,7 @@ test('C01/C04/C05/C07: strict policy/version/binding/protection/secrets/limits r
     [x => x.context.reverse(),'binding_mismatch'], [x => x.context[3].text+='changed','binding_mismatch'],
     [x => x.context[0].protected=false,'invalid_request'], [x => x.context[1].kind='unknown','invalid_request'],
     [x => {x.context[3].id='fixture-key';x.policy.allowed_fragment_ids=['fixture-key','b'];},'secret_suspected'], [x => x.policy.approval_id='fixture-key','secret_suspected'],
-    [x => x.context[3].text='x'.repeat(12000),'input_limit'],
+    [x => x.context[3].text='x'.repeat(64000),'input_limit'],
   ];
   for (const [mutate, code] of cases) {
     const input=structuredClone(args); mutate(input);

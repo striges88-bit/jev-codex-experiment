@@ -1,3 +1,4 @@
+import { requestBytes } from './limits.mjs';
 import { contextBinding } from './context-binding.mjs';
 
 const string = { type: 'string', minLength: 1 };
@@ -45,7 +46,7 @@ export function validate(name, args, apiKey) {
   const required = schemas[name]?.required;
   if (!required || !exact(args, required)) return 'invalid_request';
   const encoded = JSON.stringify(args);
-  if (Buffer.byteLength(encoded) > 12000) return 'input_limit';
+  if (Buffer.byteLength(encoded) > requestBytes) return 'input_limit';
   if (name === 'jev_begin_subtask') return null;
   if (typeof args.subtask_id === 'string' && apiKey && args.subtask_id.includes(apiKey)) return 'secret_suspected';
   if (typeof args.subtask_id !== 'string' || !/^[a-f0-9]{32}$/.test(args.subtask_id)) return 'invalid_request';

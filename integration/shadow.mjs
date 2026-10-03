@@ -1,3 +1,4 @@
+import { requestBytes } from './limits.mjs';
 import { validate } from './schema.mjs';
 import { snapshot } from './budget.mjs';
 
@@ -20,10 +21,10 @@ function packets(args) {
       criteria: { true: 'The fragment is not needed for this bounded subtask.', false: 'The fragment may be needed for this bounded subtask.' },
     };
     const next = { ...questions, [key]: question };
-    if (Object.keys(next).length > 8 || Buffer.byteLength(encode(next)) > 12000) {
+    if (Object.keys(next).length > 8 || Buffer.byteLength(encode(next)) > requestBytes) {
       if (Object.keys(questions).length) result.push({ body: encode(questions), keys: Object.keys(questions) });
       questions = { [key]: question };
-      if (Buffer.byteLength(encode(questions)) > 12000) return null;
+      if (Buffer.byteLength(encode(questions)) > requestBytes) return null;
     } else questions = next;
   }
   if (Object.keys(questions).length) result.push({ body: encode(questions), keys: Object.keys(questions) });

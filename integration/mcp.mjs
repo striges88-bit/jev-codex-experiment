@@ -1,3 +1,4 @@
+import { frameBytes } from './limits.mjs';
 import { pathToFileURL } from 'node:url';
 import { createChoice } from './choice.mjs';
 import { schemas } from './schema.mjs';
@@ -44,7 +45,7 @@ export function serve({ input = process.stdin, output = process.stdout, ...optio
     while (offset < chunk.length) {
       const end = chunk.indexOf(10, offset), finish = end < 0 ? chunk.length : end;
       const part = chunk.subarray(offset, finish);
-      if (!oversized && buffer.length + part.length > 16384) {
+      if (!oversized && buffer.length + part.length > frameBytes) {
         buffer = Buffer.alloc(0); oversized = true; error(null, -32600, 'Frame limit exceeded');
       }
       if (!oversized) buffer = Buffer.concat([buffer, part]);

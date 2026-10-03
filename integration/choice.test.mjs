@@ -118,7 +118,7 @@ test('C03/C04/C07: strict inputs, secret protection and lossless context', async
     const context = [{ id: 'one', text: long, protected: true }, { id: 'two', text: 'SECOND', protected: false }];
     assert.equal((await c.call('jev_choice', { ...args, context })).status, 'selected');
     assert.deepEqual(sent[0].state, { task, context });
-    assert.equal((await c.call('jev_choice', { ...args, context: [{ id: 'huge', text: 'я'.repeat(6100), protected: false }] })).fallback.code, 'input_limit');
+    assert.equal((await c.call('jev_choice', { ...args, context: [{ id: 'huge', text: 'я'.repeat(32100), protected: false }] })).fallback.code, 'input_limit');
     assert.equal(sent.length, 1);
     assert.equal((await c.request('tools/call', { name: 'unknown', arguments: args })).error.code, -32601);
   } finally { c.close(); }
@@ -256,7 +256,7 @@ test('C06: exact byte boundaries for frame, arguments, POST body and streamed re
   try {
     const ping = { jsonrpc: '2.0', id: 900, method: 'ping', params: { padding: '' } };
     const overhead = Buffer.byteLength(JSON.stringify(ping));
-    ping.params.padding = 'x'.repeat(16384 - overhead);
+    ping.params.padding = 'x'.repeat(131072 - overhead);
     assert.deepEqual((await c.raw(JSON.stringify(ping) + '\n')).result, {});
     ping.params.padding += 'x';
     assert.equal((await c.raw(JSON.stringify(ping) + '\n')).error.code, -32600);
@@ -267,15 +267,15 @@ test('C06: exact byte boundaries for frame, arguments, POST body and streamed re
     assert.equal((await c.call('jev_choice', args)).status, 'selected');
     const originalBodyBytes = Buffer.byteLength(lastBody);
     // Keep Cyrillic multibyte content; fill independently from observed POST length.
-    args.context[0].text += 'x'.repeat(12000 - originalBodyBytes);
+    args.context[0].text += 'x'.repeat(64000 - originalBodyBytes);
     assert.equal((await c.call('jev_choice', args)).status, 'selected');
-    assert.equal(Buffer.byteLength(lastBody), 12000);
+    assert.equal(Buffer.byteLength(lastBody), 64000);
     args.context[0].text += 'x';
     const before = count;
     assert.equal((await c.call('jev_choice', args)).fallback.code, 'input_limit'); assert.equal(count, before);
     const argsLength = Buffer.byteLength(JSON.stringify(args));
-    args.context[0].text += 'x'.repeat(12001 - argsLength);
-    assert.equal(Buffer.byteLength(JSON.stringify(args)), 12001);
+    args.context[0].text += 'x'.repeat(64001 - argsLength);
+    assert.equal(Buffer.byteLength(JSON.stringify(args)), 64001);
     assert.equal((await c.call('jev_choice', args)).fallback.code, 'input_limit'); assert.equal(count, before);
     responseBytes = 32769; args.context = [];
     assert.equal((await c.call('jev_choice', args)).fallback.code, 'response_limit');

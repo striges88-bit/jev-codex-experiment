@@ -113,8 +113,8 @@ test('E05/E06/E15: large full state splits questions only; late bad packet disca
   for(const broken of [false,true]){const bodies=[];const c=client({fetchImpl:async(url,o)=>{
     bodies.push(JSON.parse(o.body));const r=response(o.body);if(bodies.length===2){delete r.usage;if(broken)r.answers={};}return Response.json(r);
   }});
-  try{const args=await open(c);args.material.baseline='x'.repeat(8500);const r=await c.call('jev_evaluate',args);
-    assert.ok(bodies.length>1);for(const b of bodies){assert.deepEqual(b.state,{task,context,material:args.material});assert.ok(Buffer.byteLength(JSON.stringify(b))<=12000);}
+  try{const args=await open(c);args.material.baseline='x'.repeat(60500);const r=await c.call('jev_evaluate',args);
+    assert.ok(bodies.length>1);for(const b of bodies){assert.deepEqual(b.state,{task,context,material:args.material});assert.ok(Buffer.byteLength(JSON.stringify(b))<=64000);}
     assert.equal(Object.keys(Object.assign({},...bodies.map(b=>b.questions))).length,8);
     assert.equal(r.measured.input_tokens,null);assert.equal(r.measured.output_tokens,null);
     if(broken){assert.equal(r.fallback.code,'invalid_assessment');assert.ok(Object.values(r.quality).every(x=>x.raw_score===null));}
@@ -132,17 +132,17 @@ test('E09: secrets, nested overrides and unprotected instructions are rejected b
     for(const edit of [a=>a.model='override',a=>a.material.extra='override',a=>a.context[0].protected=false,a=>a.material.answer=null]){
       const a=structuredClone(args);edit(a);assert.equal((await c.call('jev_evaluate',a)).fallback.code,'invalid_request');
     }
-    const large=structuredClone(args);large.material.answer='界'.repeat(4000);assert.equal((await c.call('jev_evaluate',large)).fallback.code,'input_limit');assert.equal(calls,0);
+    const large=structuredClone(args);large.material.answer='界'.repeat(22000);assert.equal((await c.call('jev_evaluate',large)).fallback.code,'input_limit');assert.equal(calls,0);
   }finally{c.close();}
 });
 
-test('E09: final POST exactly 12000 bytes is accepted; +1 cannot fit; UTF-8 and JSON escapes count',async()=>{
+test('E09: final POST exactly 64000 bytes is accepted; +1 cannot fit; UTF-8 and JSON escapes count',async()=>{
   let bodies=[];const c=client({fetchImpl:async(url,o)=>{bodies.push(o.body);return Response.json(response(o.body));}});
   try{const args=await open(c);args.material.baseline='界\n'.repeat(1800);let r=await c.call('jev_evaluate',args);assert.equal(r.status,'estimated');
     const largestSingle=Math.max(...bodies.flatMap(body=>{const packet=JSON.parse(body);return Object.entries(packet.questions).map(([key,q])=>
       Buffer.byteLength(JSON.stringify({...packet,questions:{[key]:q}})));}));
-    assert.ok(Number.isFinite(largestSingle));args.material.baseline+='x'.repeat(12000-largestSingle);bodies=[];
-    r=await c.call('jev_evaluate',args);assert.equal(r.status,'estimated');assert.equal(Math.max(...bodies.map(body=>Buffer.byteLength(body))),12000);
+    assert.ok(Number.isFinite(largestSingle));args.material.baseline+='x'.repeat(64000-largestSingle);bodies=[];
+    r=await c.call('jev_evaluate',args);assert.equal(r.status,'estimated');assert.equal(Math.max(...bodies.map(body=>Buffer.byteLength(body))),64000);
     args.material.baseline+='x';const before=bodies.length;r=await c.call('jev_evaluate',args);
     assert.equal(r.fallback.code,'input_limit');assert.equal(r.measured.jev_requests,0);assert.equal(bodies.length,before);
   }finally{c.close();}
@@ -156,7 +156,7 @@ test('E09/E15: final POST secret preflight and invalid/overflow usage fail safel
     try{const r=await c.call('jev_evaluate',await open(c));assert.equal(r.status,'estimated');assert.equal(r.measured.input_tokens,null);assert.equal(r.measured.cost_usd,null);assert.equal(r.measured.subagent_runtime_ms,null);}finally{c.close();}
   }
   const c=client({fetchImpl:async(url,o)=>{const r=response(o.body);r.usage={input_tokens:Number.MAX_SAFE_INTEGER,output_tokens:1};return Response.json(r);}});
-  try{const args=await open(c);args.material.baseline='x'.repeat(8500);const r=await c.call('jev_evaluate',args);assert.equal(r.measured.input_tokens,null);assert.ok(r.measured.jev_requests>1);}finally{c.close();}
+  try{const args=await open(c);args.material.baseline='x'.repeat(60500);const r=await c.call('jev_evaluate',args);assert.equal(r.measured.input_tokens,null);assert.ok(r.measured.jev_requests>1);}finally{c.close();}
 });
 
 test('E03: approved wire consistency budget preserves raw/distribution, accepts 0.055 and rejects larger discrepancy',async()=>{
@@ -180,7 +180,7 @@ test('E10: Choice/shadow/evaluation use one owner, request 31 and a split plan b
   try{const args=await open(c);await c.call('jev_choice',{...args,material:undefined,context:args.context.map(({kind,...v})=>v)});
     const shadow={...args};delete shadow.material;shadow.context.push({id:'reference',text:'Reference',kind:'reference',protected:false});await c.call('jev_shadow_filter',shadow);
     for(let i=0;i<27;i++)assert.equal((await c.call('jev_evaluate',args)).status,'estimated');
-    assert.equal(calls,29);const split={...args,material:{...material,baseline:'x'.repeat(8500)}};
+    assert.equal(calls,29);const split={...args,material:{...material,baseline:'x'.repeat(60500)}};
     const blocked=await c.call('jev_evaluate',split);assert.equal(blocked.fallback.code,'budget_requests_exhausted');assert.equal(calls,29);
     const last=await c.call('jev_evaluate',args);assert.equal(last.budget.requests_used,30);assert.equal(last.measured.jev_requests,1);
     const r=await c.call('jev_evaluate',args);assert.equal(r.fallback.code,'budget_requests_exhausted');assert.equal(r.measured.jev_requests,0);assert.equal(calls,30);
