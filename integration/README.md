@@ -222,5 +222,50 @@ detects subsequent corruption/removal; callers must preserve required references
 Legacy `compactToolOutput`/`testEvidence`/CLI retain schema1 behavior, including
 `reported_passed`; it is never eligible evidence for the strict producer.
 
+Issue #17 adds one explicit finite log producer on the same completed capture
+and original/readback boundary:
+
+```powershell
+node integration/log-output.mjs run tasks/<task>/originals
+node integration/test-output.mjs read tasks/<task>/reference.json
+node integration/log-output.mjs run tasks/<task>/originals --diagnostic
+node integration/log-output.mjs run tasks/<task>/originals --unexpected-record
+node integration/log-output.mjs run tasks/<task>/originals --invalid-utf8
+```
+
+The final three commands are closed offline negative controls: a Unicode warning
+on stderr, an unexpected Unicode stdout record, or invalid UTF8 bytes force full
+received verbatim. No arbitrary executable, provider URL
+or shell command is accepted. `log-producer.mjs` starts the existing gateway and
+a fixed loopback fake upstream, sends one bodyless GET models, awaits the HTTP
+response, terminal receipt and every stdout write callback, then closes both
+servers. Synchronous and asynchronous receipt writer faults fail the producer.
+No existing log file is presented as a completed command.
+
+`gateway-http-models-passthrough-v2`, currently Node v24.13.0, accepts only
+fatal UTF-8, final newline, consistent LF/CRLF and exactly three JSON objects:
+received, connected, terminal. Each has exactly the 22 existing schema2 fields.
+Escaped duplicate/unknown/missing keys, lossy numbers, inconsistent identity,
+time/latency, status/body hashes or completion state reject the entire output.
+GET empty-body hashes, passthrough/applied=false, null usage/cost, ordered phases
+and actual connected write-state are preserved. No arbitrary text is a known log.
+
+Schema2 compact factors identical fields into `common` and ordered differences
+into `events`; reconstruct each complete semantic row with `{...common,...event}`.
+`records` is three. Every field, null, boolean and number survives; serialization
+details remain in the byte-exact original. Provenance includes format source and
+the real occurrence/command/completion. Publication and verified readback precede
+compact. Unsafe completion, diagnostic, parser or storage/readback fault returns
+full received streams, using base64 for invalid UTF-8. The existing read CLI and
+version1 original bundle are shared with #16; test profile and legacy CLI behavior
+remain compatible. `completed-output.mjs` is the internal fixed-profile engine;
+strict public entry points are `captureNodeTests`/`compactCompletedTests` and
+`captureGatewayLogs`/`compactCompletedLogs`.
+
+Actual `exec_command` output and the existing `responseContext` consumer are
+verified locally. This does not establish automatic Desktop interception,
+history pruning, inference success, net token savings or pilot/promotion.
+[Local acceptance report](../docs/issue-17-validation.md).
+
 Design provenance/caveats: `tasks/main-context-research/report.md`; current local
 acceptance and Desktop gate: `tasks/main-context-gateway/contract.md`.

@@ -5,7 +5,7 @@
   "type": "module",
   "engines": { "node": ">=24" },
   "scripts": {
-    "test": "node --test integration/choice.test.mjs integration/shadow.test.mjs integration/process.test.mjs integration/evaluate.test.mjs integration/assessment.test.mjs integration/filter.test.mjs integration/native-usage.test.mjs integration/main-gateway.test.mjs integration/websocket-context.test.mjs integration/test-output.test.mjs",
+    "test": "node --test integration/choice.test.mjs integration/shadow.test.mjs integration/process.test.mjs integration/evaluate.test.mjs integration/assessment.test.mjs integration/filter.test.mjs integration/native-usage.test.mjs integration/main-gateway.test.mjs integration/websocket-context.test.mjs integration/test-output.test.mjs integration/log-output.test.mjs",
     "smoke:live": "node integration/live-smoke.mjs"
   }
 }

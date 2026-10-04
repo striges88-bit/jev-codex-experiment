@@ -50,6 +50,47 @@ test('C06: actual producer command result survives existing model input consumer
     } else assert.match(visible.received.stdout.data,/unknown warning 🦉\n/);
   }
 });
+test('C05: completed log CLI compact and diagnostic verbatim survive the existing model consumer',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'jev-log-seam-')),execute=promisify(execFile);
+  for(const control of [null,'diagnostic','unexpected-record','invalid-utf8']){
+    const tool=await execute(process.execPath,['integration/log-output.mjs','run',join(dir,'originals'),...(control?[`--${control}`]:[])],{windowsHide:true});
+    const result=JSON.parse(tool.stdout);assert.equal(tool.stderr,'');
+    assert.equal(result.status,control?'verbatim':'compact');
+    const call={type:'function_call',name:'exec_command',call_id:'fixture-log-producer',arguments:JSON.stringify({cmd:'explicit local gateway log producer'})};
+    const output={type:'function_call_output',call_id:call.call_id,output:tool.stdout};
+    const request={type:'response.create',...body(),input:[...body().input,call,output]};
+    const before=structuredClone(request),policy={...policyFor(request),enabled:false};
+    const consumer=responseContext({selector:createMainContextSelector(),policy:()=>policy,headers});
+    const forwarded=JSON.parse(consumer.prepare(Buffer.from(JSON.stringify(request))).payload);
+    assert.deepEqual(forwarded,request);assert.deepEqual(request,before);
+    assert.equal(forwarded.input.at(-1).call_id,call.call_id);
+    const visible=JSON.parse(forwarded.input.at(-1).output);assert.deepEqual(visible,result);
+    if(!control){
+      const original=await createOriginalStore(join(dir,'originals')).read(visible.original);
+      const oracle=original.stdout.toString().trimEnd().split('\n').map(line=>JSON.parse(line));
+      assert.deepEqual(visible.events.map(event=>({...visible.common,...event})),oracle);
+      assert.equal(original.stderr.length,0);assert.deepEqual(original.provenance,visible.provenance);
+      const reference=join(dir,'log-reference.json');await writeFile(reference,JSON.stringify(visible.original));
+      const readback=JSON.parse((await execute(process.execPath,['integration/test-output.mjs','read',reference],{windowsHide:true})).stdout);
+      assert.equal(readback.stdout.data,original.stdout.toString());assert.equal(readback.id,visible.original.id);
+      assert.deepEqual(readback.provenance,result.provenance);
+    }else if(control==='diagnostic'){
+      assert.match(visible.received.stderr.data,/unknown warning 🦉\n/);
+      assert.equal(visible.reason,'stderr_diagnostic');assert.equal(visible.original,undefined);
+      assert.equal(visible.received.stdout.data.trimEnd().split('\n').length,3);
+    }else{
+      assert.match(visible.reason,/^parser:/);assert.equal(visible.original,undefined);
+      assert.equal(visible.received.stderr.data,'');
+      if(control==='unexpected-record')assert.match(visible.received.stdout.data,/unexpected 日本語 🦉\n/);
+      else{
+        assert.equal(visible.received.stdout.encoding,'base64');
+        const bytes=Buffer.from(visible.received.stdout.data,'base64');
+        assert.deepEqual(bytes.subarray(0,2),Buffer.from([255,254]));
+        assert.equal(bytes.subarray(2).toString().trimEnd().split('\n').length,3);
+      }
+    }
+  }
+});
 function clientFrame(text) {
   const payload=Buffer.from(text), key=Buffer.from([1,2,3,4]);
   const head=Buffer.alloc(payload.length<126?2:payload.length<65536?4:10); head[0]=0x81;
