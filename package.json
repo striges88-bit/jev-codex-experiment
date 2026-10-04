@@ -5,7 +5,7 @@
   "type": "module",
   "engines": { "node": ">=24" },
   "scripts": {
-    "test": "node --test integration/choice.test.mjs integration/shadow.test.mjs integration/process.test.mjs integration/evaluate.test.mjs integration/assessment.test.mjs integration/filter.test.mjs",
+    "test": "node --test integration/choice.test.mjs integration/shadow.test.mjs integration/process.test.mjs integration/evaluate.test.mjs integration/assessment.test.mjs integration/filter.test.mjs integration/native-usage.test.mjs",
     "smoke:live": "node integration/live-smoke.mjs"
   }
 }

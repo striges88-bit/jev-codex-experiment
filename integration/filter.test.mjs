@@ -38,6 +38,43 @@ const dispatch = async ({ engine, args }, auth, extras = {}) => prepareContextDi
   choice: selected(args.subtask_id), authorization: auth, ownerActive: () => engine.remainingBudget(args.subtask_id) !== null, ...extras });
 const receive = prepared => prepared.dispatch(value => value);
 
+test('scoped real manifest v2 accepts one exact task, defaults off and dispatches only allowed references', async () => {
+  const family = {
+    id: 'real-audit', task_sha256: sha256(JSON.stringify(task)), binding_sha256: contextBinding(task, context),
+    fragments: context.map(({id,kind,protected: flag,text}) => ({id,kind,protected:flag,text_sha256:sha256(text)})),
+    allowed_fragment_ids: ['a'],
+  };
+  const auth = createContextAuthorization(JSON.stringify({schema_version:2, scenario:'scoped_real_pilot', threshold:0.80, tasks:[family]}));
+  const fixture=await opened();
+  assert.deepEqual(receive(await dispatch(fixture,auth)).context,context);
+  grant(auth);
+  assert.deepEqual(receive(await dispatch(fixture,auth)).context.map(row=>row.id),['rules','requirements','pending','b','c']);
+  auth.revoke();
+  assert.equal(auth.current(task,context),null);
+});
+
+test('scoped real v2 rejects malformed inventories and supports two distinct tasks', () => {
+  const row = {id:'one',task_sha256:sha256(JSON.stringify(task)),binding_sha256:contextBinding(task,context),
+    fragments:context.map(({id,kind,protected:flag,text})=>({id,kind,protected:flag,text_sha256:sha256(text)})),allowed_fragment_ids:['a']};
+  const manifest={schema_version:2,scenario:'scoped_real_pilot',threshold:0.80,tasks:[row]};
+  const secondTask={...task,goal:'Second real task'};
+  const two=structuredClone(manifest); two.tasks.push({...structuredClone(row),id:'two',task_sha256:sha256(JSON.stringify(secondTask)),binding_sha256:contextBinding(secondTask,context)});
+  const auth=createContextAuthorization(JSON.stringify(two)); grant(auth);
+  assert.ok(auth.current(secondTask,context));
+  for (const mutate of [
+    x=>x.schema_version=3,x=>x.scenario='anything',x=>x.threshold=0.9,x=>x.extra=true,
+    x=>x.tasks=[],x=>x.tasks.push(x.tasks[0]),x=>x.tasks=Array(3).fill(x.tasks[0]),
+    x=>x.tasks[0].fragments[0].protected=false,x=>x.tasks[0].fragments[0].kind='reference',
+    x=>x.tasks[0].fragments.push(x.tasks[0].fragments[0]),x=>x.tasks[0].fragments[0].text_sha256='bad',
+    x=>x.tasks[0].allowed_fragment_ids=['rules'],x=>x.tasks[0].allowed_fragment_ids=['missing'],
+    x=>x.tasks[0].allowed_fragment_ids=['a','a'],x=>x.tasks[0].id='x'.repeat(65536),
+    x=>{ for(let i=0;i<59;i++)x.tasks[0].fragments.push({...x.tasks[0].fragments[3],id:`extra${i}`}); },
+  ]) {
+    const value=structuredClone(manifest); mutate(value);
+    assert.throws(()=>createContextAuthorization(JSON.stringify(value)),/invalid_manifest/);
+  }
+});
+
 test('C02/C03: filter threshold/allowed IDs and complete protected inventory; shadow remains 0.9', async () => {
   let sent;
   const { engine, args } = await opened({ fetchImpl: async (url, options) => {
