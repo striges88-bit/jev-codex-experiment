@@ -7,7 +7,8 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdtemp, readFile, writeFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join,resolve } from 'node:path';
+import {fixture as gitFixture,expectedDirty} from './git-fixture.mjs';
 import { zstdCompressSync, zstdDecompressSync } from 'node:zlib';
 import { sha256 } from './context-binding.mjs';
 import { createMainContextSelector, mainInventory, mainScope } from './main-context.mjs';
@@ -21,6 +22,39 @@ const capability = 'a'.repeat(32);
 const message = (text,role = 'assistant') => ({ type:'message',role,content:[{ type:role === 'assistant' ? 'output_text' : 'input_text',text }] });
 const headers = { 'chatgpt-account-id':'fixture-account','thread-id':'fixture-thread','content-type':'application/json' };
 const pair = id => [{ type:'function_call',name:'reference_lookup',call_id:id,arguments:'{}' },{ type:'function_call_output',call_id:id,output:'completed obsolete reference' }];
+
+test('C05: actual Git CLI clean/dirty/conflict/nonrepository reach existing consumer with exact readback',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'jev-git-seam-')),execute=promisify(execFile),entry=resolve('integration/git-output.mjs'),readEntry=resolve('integration/test-output.mjs');
+  for(const kind of ['clean','dirty','conflict','nonrepository']){
+    const cwd=kind==='nonrepository'?await mkdtemp(join(tmpdir(),'jev-not-repo-')):await gitFixture(kind);
+    let tool;try{tool=await execute(process.execPath,[entry,'run',join(dir,kind)],{cwd,windowsHide:true});}
+    catch(error){if(kind!=='nonrepository')throw error;tool=error;assert.equal(error.code,1);}
+    assert.equal(tool.stderr,'');const result=JSON.parse(tool.stdout);
+    assert.equal(result.status,['clean','dirty'].includes(kind)?'compact':'verbatim');
+    const call={type:'function_call',name:'exec_command',call_id:`fixture-git-${kind}`,arguments:JSON.stringify({cmd:'explicit read-only Git status producer'})};
+    const output={type:'function_call_output',call_id:call.call_id,output:tool.stdout};
+    const request={type:'response.create',...body(),input:[...body().input,call,output]},before=structuredClone(request),policy={...policyFor(request),enabled:false};
+    const consumer=responseContext({selector:createMainContextSelector(),policy:()=>policy,headers});
+    const forwarded=JSON.parse(consumer.prepare(Buffer.from(JSON.stringify(request))).payload);
+    assert.deepEqual(forwarded,request);assert.deepEqual(request,before);assert.equal(forwarded.input.at(-1).call_id,call.call_id);
+    const visible=JSON.parse(forwarded.input.at(-1).output);assert.deepEqual(visible,result);
+    if(result.status==='compact'){
+      assert.deepEqual(visible.entries,kind==='clean'?[]:expectedDirty);assert.equal(visible.clean,kind==='clean');
+      const original=await createOriginalStore(join(dir,kind)).read(visible.original);
+      const reconstructed=visible.entries.map(row=>row.xy+' '+row.path+'\0'+(row.orig_path===null?'':row.orig_path+'\0')).join('');
+      assert.equal(original.stdout.toString(),reconstructed);assert.equal(original.stderr.length,0);assert.deepEqual(original.provenance,visible.provenance);
+      const ref=join(dir,`${kind}-reference.json`);await writeFile(ref,JSON.stringify(visible.original));
+      for(let i=0;i<2;i++){
+        const readback=JSON.parse((await execute(process.execPath,[readEntry,'read',ref],{windowsHide:true})).stdout);
+        assert.equal(readback.stdout.data,reconstructed);assert.equal(readback.stderr.data,'');assert.deepEqual(readback.provenance,visible.provenance);
+      }
+    }else{
+      assert.equal(visible.original,undefined);assert.equal(visible.clean,undefined);
+      if(kind==='conflict'){assert.equal(visible.reason,'parser:unmerged_conflict');assert.equal(visible.received.stdout.data,'UU modify.txt\0');}
+      else assert.match(visible.received.stderr.data,/not a git repository/);
+    }
+  }
+});
 
 test('C06: actual producer command result survives existing model input consumer with exact readback',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'jev-tool-seam-')),file=join(dir,'fixture.test.mjs');

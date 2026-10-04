@@ -267,5 +267,58 @@ verified locally. This does not establish automatic Desktop interception,
 history pruning, inference success, net token savings or pilot/promotion.
 [Local acceptance report](../docs/issue-17-validation.md).
 
+Issue #18 adds the closed `git-status-porcelain-v1-z` profile:
+
+```powershell
+node integration/git-output.mjs run tasks/<task>/originals
+node integration/test-output.mjs read tasks/<task>/reference.json
+```
+
+Run from the trusted worktree root. The fixed executable is
+`C:/Program Files/Git/cmd/git.exe`; actual version must be
+`git version 2.56.0.windows.1`, with Node v24.13.0. The producer canonicalizes
+the root, hashes the executable, runs fixed `--version` and `rev-parse
+--show-toplevel` probes, then the single status argv below (ROOT is the same
+verified root). Probe outcomes and exact diagnostics remain in provenance.
+
+```text
+--no-optional-locks --no-lazy-fetch --no-pager
+-c safe.directory=ROOT -c core.fsmonitor=false -c core.untrackedCache=false
+-c status.renames=true status --porcelain=v1 -z --untracked-files=all
+--ignore-submodules=none --find-renames=50% --no-column
+```
+
+Shell is disabled; inherited `GIT_*` environment keys are removed case
+insensitively. No arbitrary command, Git write, global trust/config update,
+optional index refresh or lazy object fetch is exposed. Node profiles keep
+their existing environment policy. Version/root/probe faults preserve received
+bytes and diagnostics; an empty or failed probe cannot establish clean status.
+
+`captureGitStatus`/`compactCompletedGit` use the private shared child/EOF witness
+and existing schema1 atomic original store/read CLI. Caller metadata edits and
+parser/select overrides cannot manufacture Git success, including through the
+shared engine. Compact follows full extraction and verified publication/readback.
+It contains ordered `entries` of `{xy,path,orig_path}`, `records`, `clean`,
+real provenance and original reference. Reconstruct stdout by joining
+`xy + " " + path + NUL` and, for R in either column, `orig_path + NUL`.
+The first rename path is destination. UTF8 is fatal and byte round-trips;
+paths are never trimmed, normalized, unquoted or opened by the parser.
+
+Supported XY: `??`, space followed by M/A/D/T/R, `D `, and M/T/A/R followed
+by space/M/T/D. All seven unmerged codes, C/copy, ignored entries, headers,
+unknown codes/grammar/encoding, diagnostics on either stream, incomplete or
+unsafe completion and original/storage/readback faults return full received
+verbatim. Invalid UTF8 uses base64. Clean means only this observed status run's
+tracked/nonignored-untracked scope, after all gates; it makes no claim about
+ignored files, upstream, branch, readiness to commit or atomic repository state.
+
+Tests construct finite loose Git objects and DIRC-v2 indices through filesystem
+writes in isolated temp repositories. Every Git test command is read-only.
+Real Windows names and synthetic POSIX controls are identified separately.
+Actual CLI results reach the existing responseContext consumer unchanged;
+no automatic Desktop interception, pilot, history reduction or efficiency
+claim follows. Small structured outputs can be larger than raw porcelain;
+net savings are unmeasured. [Acceptance report](../docs/issue-18-validation.md).
+
 Design provenance/caveats: `tasks/main-context-research/report.md`; current local
 acceptance and Desktop gate: `tasks/main-context-gateway/contract.md`.
