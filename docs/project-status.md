@@ -1,0 +1,120 @@
+# JEV-LAYER: project checkpoint — 2026-10-04
+
+Public версия полной матрицы: 38 функций, 18 проверенных предположений, два подтверждённых дефекта и 15 существенных пробелов. Основание — завершённый read-only audit baseline `73c0b30` и последующее согласование 18 решений. После аудита production-модули не менялись; этот checkpoint обновляет документацию и глоссарий. Приватные исходные журналы, переписка, configuration/binding и диагностические пакеты не публикуются.
+
+Runtime-строки ниже — датированные свидетельства аудита, **не свежая проверка runtime в момент commit/push**. В последнем исследовательском наблюдении маршрут этого существующего Desktop-чата работал, но binding после изменения inventory не подходил: effective exclusions=0, полный fallback. Ранее один разрешённый WS removal и live revoke/full restoration были подтверждены. Это не доказывает постоянный автоматический отбор, экономию токенов или production readiness.
+
+## Архитектура и текущее направление
+
+Desktop → owned loopback gateway → прежний ChatGPT backend; main model/auth/native history/compaction/memory сохраняются. Gateway pruning — local permission/binding, не вызовы TypeSafe. MCP Choice/filter/evaluate — отдельные операции с собственными budgets и authority. Compact helper сохраняет original/hash/readback, но caller-selected view ещё не является строгим supported-success parser pipeline.
+
+Следующие приоритеты: tests/logs/Git compact outputs → formal pruning + task state/readback → frozen-contract evaluate. Routing вне нового scope. [Согласованные требования](context-quality-v1.md), [measurement protocol](measurement-design.md). Реализация первого этапа и конкретный pilot packet ещё не поручены этим checkpoint; commit/push — публикация состояния, не активация.
+
+## Матрица функций
+
+LIVE — bounded исторический запуск; OFFLINE — локальный контракт/fixture; PARTIAL — подтверждена часть; UNKNOWN — нет нужного evidence; DEFERRED — отложено. Статус строки не равен acceptance проекта.
+
+| ID | Функция / владелец | Реализация и свидетельство | Фактическое состояние / ограничение | Следующий критерий готовности |
+|---|---|---|---|---|
+| F01 | Choice MCP | choice.mjs, budget.mjs; accepted #2/#3 | LIVE исторически; два профиля Luna/max и Sol/low, advisory, execution.enabled=false. В текущем аудите begin/end доступны; Choice-export denied | Исправить M1; не принимать profile за доказательство запуска |
+| F02 | Нативный выбранный профиль | Координатор + host; docs/issue-3-validation.md | LIVE на bounded synthetic scope; actual profile/effort/cwd проверялись. Не автоматическая маршрутизация основной модели | На каждом новом запуске подтвердить effective profile и требуемые материалы |
+| F03 | Общий lifecycle/budget | budget.mjs;30HTTP/30000ms, TTL1h, capacity128 | OFFLINE+historical live; process-local, queue сериализует операции. Перезапуск теряет owner, новый ID не разрешает бюджетный retry | M1 post-await checks; не обнулять остатки без отдельной revision |
+| F04 | MCP process-client | process-client.mjs, fallback/smoke path | OFFLINE; фиксированный15s deadline несовместим с допустимым длинным shadow/filter (M2) | Полный серверный allowance и client deadline должны согласоваться |
+| F05 | Legacy shadow | shadow.mjs/shadow-context.mjs | LIVE synthetic;0.9 только would_exclude, applied=false, полная копия сохраняется | Не применять0.9 как универсальный порог безопасности |
+| F06 | Opt-in probabilistic filter | filter.mjs/filter-context.mjs | LIVE bounded #7/#10;0.80, exact optional IDs/binding/revision/owner/protection; provider сам не удаляет | Native atomic consumption/revocation race остаются UNKNOWN |
+| F07 | Manifest/authorization | context-binding.mjs/filter-context.mjs | OFFLINE; trusted process-local single-use authority, compatible v1/v2 manifests; payload не выдаёт себе permission | Не смешивать approved reference и required evidence; recheck перед dispatch |
+| F08 | Evaluate provider estimate | evaluate.mjs:3 Score+5 Noul | LIVE на прежних небольших/исследовательских пакетах; текущая доступность TypeSafe не перепроверялась. UNKNOWN допустим при guard/error | Отдельно provider status, coverage и локальные факты |
+| F09 | Local facts / assessment | assessment.mjs; five invariant evidence, snapshot hash | OFFLINE+bounded accepted #5. Нет automatic PASS по Score/Noul. Local violation при unavailable provider агрегируется unknown (M3) | DEFERRED: разделить статусы фактов и provider estimate |
+| F10 | Один repair | assessment.mjs + trusted callbacks | OFFLINE; только подтверждённое violation, authority, continuity/budget; один проход. Scope/context не расширяются | Реальный repair каждого нового случая проверять отдельно; низкий Score не запускает ремонт |
+| F11 | Freeze actual main answer | Policy/ручная сборка snapshot/args | PARTIAL: exact draft/hash проверялись; общего автоматического host callback нет | DEFERRED: автоматизированный freeze→preflight→evaluate→receipt→final hash |
+| F12 | Снятие64KB input cap | limits.mjs requestBytes/frameBytes=Infinity; d2bf1b7 | Implemented, pushed; весь task/context не режется. Это не бесконечные ресурсы и не отмена всех контрактных guards | При реальном отказе UNKNOWN; не приписывать неизвестный HTTP error размеру |
+| F13 | Fixed TypeSafe transport | transport.mjs + encrypted Windows launcher | Implemented; fixed HTTPS, no redirects/retries;5s attempt,32KiB response guard; secret heuristic+loaded-key check | Не отправлять секреты/не обходить guard, безопасно сохранять причину отказа |
+| F14 | Native usage attribution | native-usage.mjs | OFFLINE + bounded historical receipt usage; cached является subset. Collector доверяет полноте предоставленного источника | Полный exact source/arm boundary; occupancy/money не выводить из cumulative counters |
+| F15 | Existing Desktop route | main-gateway.mjs + owned openai_base_url | LIVE в датированном аудите;127.0.0.1:8768→прежний ChatGPT backend. Legacy jev_main block отсутствует, model/effort сохранены | Отличать маршрут от включённого отбора и от других чатов |
+| F16 | HTTP/SSE / compact endpoint | main-gateway.mjs; fixtures | OFFLINE+historical compact/models observations; ошибки/status/cancellation, zstd, stream passthrough. Compact не фильтруется | Actual same-chat inference в этом случае WS; HTTP fixture не заменяет WS proof |
+| F17 | WS plaintext adapter | websocket-context.mjs | LIVE; mask/fragment/TCP split/control/backpressure локально проверены, no input size cap | Поддержка pinned dialect, неизвестность — full до selection/close после неё |
+| F18 | Логические группы | main-context.mjs | OFFLINE+real inventory; call/result intervals целые, последние8 protected; opaque reasoning/compaction/tools/user instructions protected | Новые native types не считать supported без проверки |
+| F19 | Привязка исходного вхождения | selector cache/start,end,hash/item_hashes | Исправлена прежняя ошибка повторов; регрессия покрывает новый одинаковый fragment за recent tail | Не переносить permission на будущие дубликаты/префиксы |
+| F20 | Review нейтральной metadata | main-context.mjs metadata_reviewable | Узкий trusted metadata_reviewed для completed assistant text/unknown classification; сильная защита не снимается | Не превращать unknown classification в общую permission |
+| F21 | Реальный scoped WS selection | локальные проверенные receipts | LIVE в ограниченной исторической проверке: одна approved группа исключалась, actual upstream write и provider_completed связаны | Не объявлять этим broad automatic filtering всей истории |
+| F22 | Текущий active filtering | локальные проверенные receipts, policy7/filter/enabled | **PARTIAL: policy включена, effective exclusions0.** Prefix stale после compaction; текущие bytes full | Свежая bounded inventory review/binding без переноса старого разрешения |
+| F23 | Incremental original reconstruction | response-context.mjs | LIVE reconstruction; nonempty completed.output или validated output_item.done, empty placeholder учитывается | Unknown previous ID/output/concurrency после selection → close до unsafe write |
+| F24 | Selected native delta reuse | response-context.mjs, local regression | OFFLINE после финального исправления; final-generation selected live reuse ещё не подтверждён | Одна настоящая выбранная chain со стабильной authority и неизменными delta bytes |
+| F25 | Revocation/full restoration | локальные проверенные receipts | LIVE: disabled revision восстановила полный prefix, previous_response_id=null, provider завершил | Не приравнивать это к автоматическому network bypass при смерти gateway |
+| F26 | Одноразовая inspection | main-gateway.mjs CLI settings | Реально использовалась own-thread, candidates+hashes; wx/no overwrite, secret guard; **OFF в аудите** | Новая inspection — отдельный явный bounded шаг, не passive collector |
+| F27 | Receipts | safe hash/group/byte/status events | LIVE, payload/auth не пишутся; received/connected/terminal и message/provider phases различаются | Метрики full reconstructed vs native delta и correlation coverage отдельно |
+| F28 | WS compression | main-gateway.mjs strips offer | OFF в аудите. Plaintext доступен благодаря no-extension negotiation; HTTP zstd отдельный | Измерить network/CPU/latency tradeoff, не смешивать bytes и tokens |
+| F29 | Compact tool output | compact-output.mjs | OFFLINE и явно использованные wrapper результаты; full artifact/hash/readback, ошибки целиком | Расширить применение explicit wrapper там, где доказано большое лишнее output |
+| F30 | Компактизация всех tools | Host/координатор | **Не реализована.** raw functions/MCP/read_thread могут вернуть большой результат; wrappers нужно применять явно | Сначала lossless parse/project, затем компактный feedback; hooks не добавлять автоматически |
+| F31 | Автозапуск | start/autostart-main-gateway.ps1 | LIVE Running, Limited current-user logon, независим от Desktop, IgnoreNew/restart3 | Реальный новый Windows login и порядок с Desktop ещё не проверены |
+| F32 | Config/rollback | configure-main-gateway.mjs; private owned plan | Exact scoped blocks, current baseline/readback, staged rename; unrelated settings сохраняются. Не полный multi-writer lock | Держать актуальный owner baseline, не восстанавливать старый config целиком |
+| F33 | Crash/recovery / rollout | Windows task + manual rollback | PARTIAL; нет automatic direct-routing bypass, удаление task не останавливает уже живой gateway | Проверить bounded recovery отдельно, согласовать desired outage behavior |
+| F34 | Native loaded history / compaction | Остаются host-owned | Загруженная история не заменялась; native compaction/model/memory не переписаны | Не заявлять general host callback/whole-window replacement |
+| F35 | Калибровка | #6 synthetic split3/3; #7 limited trial | Bounded accepted; general false accepts/false exclusions/needed ablation не установлены | Репрезентативный frozen hold-out по отдельному поручению |
+| F36 | Реальный comparison | #10 fixed Sol/low pair | PARTIAL;3/3 факта обе arms;child input -127tokens, но overall gain/atomic payload UNKNOWN | Не повторять прежний пилот и не считать0.33% общей экономией |
+| F37 | Frozen-contract evaluate | Согласована спецификация v1 | NOT_IMPLEMENTED: critical + explicit acceptance criteria, по каждому PASS/FAIL/UNKNOWN; новые правила не реализованы | Отдельное поручение после первого этапа outputs; независимые quality gates |
+| F38 | Git/public state | WS baseline 73c0b30 и текущий documentation checkpoint | Public code, glossary, feature matrix и agreed v1 policy versioned; private runtime/evidence/config вне Git | Сверка точного remote SHA/tree выполняется после push; checkout не восстанавливает credential или binding |
+
+## Подтверждённые дефекты, не исправленные этим checkpoint
+
+Controlled offline probes, без внешних provider HTTP; ordinary suite не покрывает все эти контрпримеры.
+
+| ID / приоритет | Доказательство | Влияние и границы | Минимальная предлагаемая правка |
+|---|---|---|---|
+| M1 / P2 | choice.mjs:83–92; root-probes close+TTL: status=selected при owner=null | Успешный advisory результат устаревшего lifecycle. Не доказан неразрешённый native launch: consumer отдельно rechecks owner | После awaited transport проверять signal и точное budget entry identity; сохранить реальные counters, добавить close/TTL регрессии |
+| M2 / P2 | process-client.mjs:23; реальный offline32-reference shadow: direct shadow_complete16022.5ms/4packets; client timeout15003.0ms | Fallback/smoke process-client обрывает допустимую длинную операцию и убивает child. Это не доказанный15s timeout у Desktop MCP host или обычного однопакетного evaluate | Согласовать trusted configurable RPC deadline с30s provider allowance/queue margin, не уничтожать unrelated pending calls без явного контракта |
+
+M3 — aggregate UNKNOWN при недоступном judge и отдельно известном локальном violation: установленное поведение conservative handback, не новый доказанный дефект. В будущем статусы можно разделить.
+
+## Существенные пробелы
+
+| ID / приоритет | Классификация / факт | Последствие | Следующий bounded шаг |
+|---|---|---|---|
+| G1 / P1 | Оngoing filtering: enabled policy7 привязана к исчезнувшему prefix; selectors возвращают inventory_changed | Сервис работает, но текущая экономия отбора отсутствует | Fresh binding workflow; явно видеть effective selection status |
+| G2 / P1 | Нет автоматического renewal/inspection после user steering/compaction; inspection OFF | Старое успешное включение не действует на каждый следующий user turn | Определить безопасный renewal, не авторизовать произвольный новый context автоматически |
+| G3 / P1 | Compact wrappers опциональны; в исходном аудите raw read_thread и позднее raw receipt print породили чрезмерный tool output | Действия агента сами могут увеличивать контекст; наличие wrapper это не предотвращает | Полные источники читать локально, проектировать нужные поля до вывода; existing lesson уточнён |
+| G4 / P1 | Benefit не измерен; selected delta reuse финальной версии только offline; WS compression OFF | Корректная функция может не давать положительный overall gain | Сначала живой bounded selected chain, затем один план measurement по отдельному поручению |
+| G5 / P2 | Устаревший README и отсутствие current public readiness summary | Закрывается этим documentation checkpoint; исторические SPEC/validation outcomes сохранены | Использовать README, эту матрицу и v1 spec совместно |
+| G6 / P2 | Конкурирующие исторические статусы и неактуальные #11/#13/#14 | Текущий public checkpoint добавлен; issue bodies/comments этим push не меняются | Отдельно синхронизировать Issues после полного чтения и в разрешённом scope |
+| G7 / P2 | global Jev opt-in говорит None connected/BLOCKED_HOST_INTEGRATION; новый outgoing seam есть, loaded-window replacement нет | Текст смешивает две разные возможности, может препятствовать правильному report/dispatch | Уточнить wording по двум независимым статусам отдельным разрешённым instruction diff; глобальный файл аудит не меняет |
+| G8 / P2 | Gateway единственный active network route; task restart3 не automatic bypass; login/order не тестирован | При недоступном localhost штатный chat route зависит от восстановления/rollback | Bounded recovery/login proof без повторных платных probes; определить outage policy |
+| G9 / P2 | Raw receipts растут, append sync, полные группы хэшируются заново; HTTP/full WS input буферизуется; no input cap | Практический memory/CPU/disk envelope неизвестен; OOM/latency regression не доказаны | Local profiling/redacted log retention по отдельному scope, не возвращать64KB cap и не резать required input |
+| G10 / P2 | TypeSafe scanner эвристический; код/fixtures может выглядеть как secret; автоматический reviewer не признал standing consent в этой попытке | Частые UNKNOWN могут ограничивать usefulness main evaluate | Диагностика: различать secret guard/approval denial/provider HTTP/schema/budget; не обходить защиту |
+| G11 / P2 | Native payload plaintext/atomic spawn binding и queued revocation не доказаны | Echo/prepared context IDs не заменяют actual immutable host consumption | Exact native receipt когда host его предоставляет; до этого UNKNOWN |
+| G12 / P2 | General calibration/quality ground truth недостаточны; #10 fixed manual profile exception | Нельзя обосновать broad threshold/auto PASS/economic claims | Пользователь-deferred hold-out/rubric/evidence redesign |
+| G13 / P3 | Current inventory имеет real unknown native item в датированном аудите | Full bytes сохранены; это compatibility fallback, а не потеря данных/падение | Уточнить dialect только если повторяется и препятствует нужному результату; не расширять allowlist наугад |
+| G14 / P3 | Подробные private artifacts не входят в Git | Checkout не восстанавливает private runtime, bindings и raw evidence; это намеренная граница публикации | Public matrix/spec/protocol сохраняют решения; credentials/config/originals требуют отдельного локального восстановления |
+| G15 / P3 | live-smoke.mjs: Choice fallback/неуспешный assert пропускает явный end, который расположен лишь в success branch | Mocked production-script copy подтвердил begin→Choice→process_stop без end. Процесс останавливается и process-local owner исчезает: активный orphan не доказан, но explicit close receipt/протокол finally отсутствует | Перенести end в finally с сохранением safe failure; shadow/evaluate smoke уже делают это. Не запускать настоящий старый smoke повторно |
+
+G1/G2/G4/G8 и runtime строки сохраняют область датированного аудита. Удалённое состояние Issues не перепроверяется этим checkpoint; их обновление не входит в commit/push. G5 закрывается актуальной сводкой; G6/G14 закрыты только в части public documentation, остальные ограничения остаются.
+
+## Assumption audit
+
+| A | Проверяемое предположение | Факт / проверка, которая различает причины | Вердикт; что делать при другом исходе |
+|---|---|---|---|
+| A01 | Models200 подтверждает inference route | Чат до migrate имел models200/Responses0; после override — собственные WS sampling/tool continuations | Опровергнуто; всегда проверять реальный /responses этого chat, при0 искать route, не включать selector |
+| A02 | Нет terminal значит нет WS | Fresh received/connected/socket доказали открытый WS до terminal | Опровергнуто; наблюдать lifecycle, при отсутствии open socket искать actual process route |
+| A03 | Отсутствие custom-provider dispatch означает нет поддерживаемого seam | Local strict config/read+negative control, позднее genuine ChatGPT WS через openai_base_url | Опровергнуто; ранее слишком узкая гипотеза уже заменена |
+| A04 | enabled/filter означает исключения сейчас | Policy7enabled vs fresh rows applied=false/excluded=[]/inventory_changed, hashes equal | Опровергнуто; нужны matching prefix+разрешённый removable group, при live exclusion подтвердить write/completion |
+| A05 | Old binding автоматически переживает новыйuser turn/compaction | Prefix checks/user-role task_steered; native compaction изменила исходные hashes | Опровергнуто; fresh review либо full; не переносить permission |
+| A06 | Gateway использует TypeSafe filter/evaluate | Полный main-context/gateway source: deterministic allowlist, нет этих вызовов | Опровергнуто; сохранять разные budgets/scopes/authority |
+| A07 | Один successful removal даёт экономию | Live native delta5363B→reconstructed full1154754B; final delta reuse offline; metrics model-visible/token/cache отсутствуют | Не установлено; сравнивать одинаковое представление полного/selected context и весь overhead |
+| A08 | MCP все инструменты recheck owner после HTTP | Root close/TTL Choice возвращает selected при ownernull | Опровергнуто, M1; если regression returns fallback — исправление проверить без нового live trial |
+| A09 |15s client покрывает допустимый server call | Реальный controlled32-reference4×4s direct completes, process-client aborts15s | Опровергнуто, M2; после deadline fix тот же fixture должен завершиться и сохранить owner cleanup |
+| A10 | Фактическая HTTP-ошибка большого пакета доказывает size cap TypeSafe | Старый receipt не сохранил точный status/body; synthetic413 не является этой live причиной | Не установлено; нужен безопасный HTTP status и category, не повторять платный capacity experiment |
+| A11 | Evaluate работает на любом объёме, потому что малый пакет estimated | Есть small live estimated, large HTTP/guard UNKNOWN и specific export restrictions | Опровергнуто как общее утверждение; module availability/provider reachability/input admissibility различать |
+| A12 | Local invariant review и provider status одно | assessment aggregate unknown при unavailable estimate; отдельная row может иметь violation | Опровергнуто; текущая conservative handback deliberate, redesignDEFERRED |
+| A13 | Подготовленный native briefing/hash — exact actual prompt | #10 actual spawn text encrypted; effective model/session/cwd и3facts проверены отдельно | Не установлено; UNKNOWN actual payload/atomicity сохраняется |
+| A14 |0.80 /0.90 /Score — взаимозаменяемые gates |0.80fragment opt-in,0.90legacyshadow,Choice confidence0.80 и Scoreбезуниверсальногопорога | Опровергнуто; разные probability meanings, local facts/authority не заменять числами |
+| A15 | Автозапуск решает login/order/crash | Running task/listener proof есть, нового Windows login/direct bypass proof нет | PARTIAL; проверить отдельный operating scenario, не выдавать registration за future success |
+| A16 | Compact wrapper автоматически защитит любую read_thread/tool выдачу | Этот аудит сначала напечатал полный nested result и позже полный receipt object; tools сообщили truncation | Опровергнуто; ошибка workflow признана, projection исправлен, prevention lesson обновлён |
+| A17 |98/98 означает отсутствие дефектов/полнуюготовность | Unchanged suite evidence истинно; M1/M2 новые контрпримеры не представлены прежними проверками | Опровергнуто как универсальная гарантия; новую границу добавить при разрешённом исправлении |
+| A18 | Closed#6/#7 завершает всю цель проекта | Accepted synthetic scope ограничен; #10PARTIAL, fresh main selection stale, parent#1open | Опровергнуто; child acceptance/scoped experiment/general rollout отдельно |
+
+## Проверки и эксплуатационная граница
+
+Offline suite повторно выполнена перед этим checkpoint: `npm test` — 98/98 PASS, exit 0. Sandbox-запуск был заблокирован EPERM при rename временного test config; повторный разрешённый запуск вне sandbox прошёл. Production source сохранён неизменным. Это ограниченное свидетельство, не гарантия всех сценариев и не исправление M1/M2. Новые требования v1 ещё не проверены реализацией. Public allowlist, 19 local links и diff проверены. Итоговые Git SHA и дерево доступны в истории репозитория; remote equality проверяется после push.
+
+Input byte cap снят (request/frame Infinity), но server budgets, output guards, question/context contracts остаются. Capacity/provider/guard failure — UNKNOWN с сохранением полного защищённого контекста. Gross byte compression, native wire deltas, cumulative usage и одновременное context occupancy — разные метрики. General token/cost/latency benefit, Windows login ordering и verified restore остаются UNKNOWN.
+
+Только reviewed code и public docs versioned. Clone не создаёт credentials, localhost capability, Desktop endpoint override, matching context permission или current-user scheduled task. Требуется их отдельная проверенная локальная настройка; credential/header/history/raw receipts в Git не переносятся. Недоступный gateway — transport failure, восстановление процесса/контролируемый rollback; автоматический network bypass не реализован.
