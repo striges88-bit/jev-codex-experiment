@@ -1,6 +1,6 @@
 # JEV-LAYER: project checkpoint — 2026-10-04
 
-Public версия полной матрицы: 38 функций, 18 проверенных предположений, два подтверждённых дефекта и 15 существенных пробелов. Основание — завершённый read-only audit baseline `73c0b30` и последующее согласование 18 решений. После аудита production-модули не менялись; этот checkpoint обновляет документацию и глоссарий. Приватные исходные журналы, переписка, configuration/binding и диагностические пакеты не публикуются.
+Public версия полной матрицы: 38 функций, 18 проверенных предположений, два подтверждённых дефекта и 15 существенных пробелов. Основание — завершённый read-only audit baseline `73c0b30` и последующее согласование 18 решений. Последующее узкое изменение #16 добавляет явный completed test producer и strict original/readback путь; [проверка #16](issue-16-validation.md). Приватные исходные журналы, переписка, configuration/binding и диагностические пакеты не публикуются.
 
 Runtime-строки ниже — датированные свидетельства аудита, **не свежая проверка runtime в момент commit/push**. В последнем исследовательском наблюдении маршрут этого существующего Desktop-чата работал, но binding после изменения inventory не подходил: effective exclusions=0, полный fallback. Ранее один разрешённый WS removal и live revoke/full restoration были подтверждены. Это не доказывает постоянный автоматический отбор, экономию токенов или production readiness.
 
@@ -8,7 +8,7 @@ Runtime-строки ниже — датированные свидетельс�
 
 Desktop → owned loopback gateway → прежний ChatGPT backend; main model/auth/native history/compaction/memory сохраняются. Gateway pruning — local permission/binding, не вызовы TypeSafe. MCP Choice/filter/evaluate — отдельные операции с собственными budgets и authority. Compact helper сохраняет original/hash/readback, но caller-selected view ещё не является строгим supported-success parser pipeline.
 
-Следующие приоритеты: tests/logs/Git compact outputs → formal pruning + task state/readback → frozen-contract evaluate. Routing вне нового scope. [Согласованные требования](context-quality-v1.md), [measurement protocol](measurement-design.md). Реализация первого этапа и конкретный pilot packet ещё не поручены этим checkpoint; commit/push — публикация состояния, не активация.
+Следующие приоритеты: tests/logs/Git compact outputs → formal pruning + task state/readback → frozen-contract evaluate. Routing вне нового scope. [Согласованные требования](context-quality-v1.md), [measurement protocol](measurement-design.md). #16 реализует один явный test profile; logs/Git и следующие tickets ещё не исполнены. Конкретный pilot packet требует отдельного поручения; commit/push — публикация состояния, не активация.
 
 ## Матрица функций
 
@@ -44,7 +44,7 @@ LIVE — bounded исторический запуск; OFFLINE — локаль
 | F26 | Одноразовая inspection | main-gateway.mjs CLI settings | Реально использовалась own-thread, candidates+hashes; wx/no overwrite, secret guard; **OFF в аудите** | Новая inspection — отдельный явный bounded шаг, не passive collector |
 | F27 | Receipts | safe hash/group/byte/status events | LIVE, payload/auth не пишутся; received/connected/terminal и message/provider phases различаются | Метрики full reconstructed vs native delta и correlation coverage отдельно |
 | F28 | WS compression | main-gateway.mjs strips offer | OFF в аудите. Plaintext доступен благодаря no-extension negotiation; HTTP zstd отдельный | Измерить network/CPU/latency tradeoff, не смешивать bytes и tokens |
-| F29 | Compact tool output | compact-output.mjs | OFFLINE и явно использованные wrapper результаты; full artifact/hash/readback, ошибки целиком | Расширить применение explicit wrapper там, где доказано большое лишнее output |
+| F29 | Compact tool output | compact-output.mjs, test-output.mjs; #16 | OFFLINE + actual local exec_command producer/readback: strict flat Node spec success, atomic original, unsafe verbatim; legacy helper совместим | Logs/Git профили далее; general Desktop apply/pilot не запущены |
 | F30 | Компактизация всех tools | Host/координатор | **Не реализована.** raw functions/MCP/read_thread могут вернуть большой результат; wrappers нужно применять явно | Сначала lossless parse/project, затем компактный feedback; hooks не добавлять автоматически |
 | F31 | Автозапуск | start/autostart-main-gateway.ps1 | LIVE Running, Limited current-user logon, независим от Desktop, IgnoreNew/restart3 | Реальный новый Windows login и порядок с Desktop ещё не проверены |
 | F32 | Config/rollback | configure-main-gateway.mjs; private owned plan | Exact scoped blocks, current baseline/readback, staged rename; unrelated settings сохраняются. Не полный multi-writer lock | Держать актуальный owner baseline, не восстанавливать старый config целиком |

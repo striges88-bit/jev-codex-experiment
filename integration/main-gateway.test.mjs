@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import net from 'node:net';
 import { once } from 'node:events';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { mkdtemp, readFile, writeFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,7 +13,7 @@ import { sha256 } from './context-binding.mjs';
 import { createMainContextSelector, mainInventory, mainScope } from './main-context.mjs';
 import { createMainGateway } from './main-gateway.mjs';
 import { responseContext } from './response-context.mjs';
-import { compactToolOutput, testEvidence } from './compact-output.mjs';
+import { compactToolOutput, testEvidence, createOriginalStore } from './compact-output.mjs';
 import { planGatewayConfig, planBuiltinGatewayConfig, rollbackGatewayConfig, applyGatewayConfig, writeGatewayConfig } from './configure-main-gateway.mjs';
 
 const hash = value => sha256(JSON.stringify(value));
@@ -19,6 +21,35 @@ const capability = 'a'.repeat(32);
 const message = (text,role = 'assistant') => ({ type:'message',role,content:[{ type:role === 'assistant' ? 'output_text' : 'input_text',text }] });
 const headers = { 'chatgpt-account-id':'fixture-account','thread-id':'fixture-thread','content-type':'application/json' };
 const pair = id => [{ type:'function_call',name:'reference_lookup',call_id:id,arguments:'{}' },{ type:'function_call_output',call_id:id,output:'completed obsolete reference' }];
+
+test('C06: actual producer command result survives existing model input consumer with exact readback',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'jev-tool-seam-')),file=join(dir,'fixture.test.mjs');
+  const execute=promisify(execFile),env={...process.env};delete env.NODE_TEST_CONTEXT;
+  for(const diagnostic of [false,true]){
+    await writeFile(file,"import test from 'node:test';\n"+(diagnostic?"process.stderr.write('unknown warning 🦉\\n');\n":'')+"test('успех 🦉',()=>{});\n");
+    // Same public entry used from exec_command. This does not read an old log.
+    const tool=await execute(process.execPath,['integration/test-output.mjs','run',join(dir,'originals'),file],{env,windowsHide:true});
+    const result=JSON.parse(tool.stdout);assert.equal(tool.stderr,'');
+    assert.equal(result.status,diagnostic?'verbatim':'compact');
+    const call={type:'function_call',name:'exec_command',call_id:'fixture-producer',arguments:JSON.stringify({cmd:'explicit test producer'})};
+    const output={type:'function_call_output',call_id:call.call_id,output:tool.stdout};
+    const request={type:'response.create',...body(),input:[...body().input,call,output]};
+    const before=structuredClone(request),policy={...policyFor(request),enabled:false};
+    const consumer=responseContext({selector:createMainContextSelector(),policy:()=>policy,headers});
+    const forwarded=JSON.parse(consumer.prepare(Buffer.from(JSON.stringify(request))).payload);
+    assert.deepEqual(forwarded,request);assert.deepEqual(request,before);
+    const visible=JSON.parse(forwarded.input.at(-1).output);
+    assert.deepEqual(visible.provenance,result.provenance);
+    if(!diagnostic){
+      const original=await createOriginalStore(join(dir,'originals')).read(visible.original);
+      assert.match(original.stdout.toString(),/✔ успех 🦉/);assert.equal(original.stderr.length,0);
+      assert.deepEqual(original.provenance,visible.provenance);
+      const reference=join(dir,'reference.json');await writeFile(reference,JSON.stringify(visible.original));
+      const readback=JSON.parse((await execute(process.execPath,['integration/test-output.mjs','read',reference],{env,windowsHide:true})).stdout);
+      assert.equal(readback.stdout.data,original.stdout.toString());assert.equal(readback.id,visible.original.id);
+    } else assert.match(visible.received.stdout.data,/unknown warning 🦉\n/);
+  }
+});
 function clientFrame(text) {
   const payload=Buffer.from(text), key=Buffer.from([1,2,3,4]);
   const head=Buffer.alloc(payload.length<126?2:payload.length<65536?4:10); head[0]=0x81;

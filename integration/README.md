@@ -180,5 +180,47 @@ Pass the actual captured command exit code; output counts alone are only
 The caller supplies a trusted task artifact directory; no automatic command
 rewriting, mutation wrapper or PostToolUse replacement is installed.
 
+Issue #16 adds an explicit completed producer, independently of the legacy helper:
+
+```powershell
+node integration/test-output.mjs run tasks/<task>/originals integration/native-usage.test.mjs
+node integration/test-output.mjs read tasks/<task>/reference.json
+```
+
+Save the returned `original` descriptor as `reference.json` for the read command.
+The same entry runs from `exec_command`; `responseContext` fixtures consume its
+actual stdout as a function-call result. This proves the local producer/tool seam
+and offline consumer path, not automatic Desktop interception or a measuring pilot.
+
+The `node-spec-flat-v1` gate currently supports Node **v24.13.0** only: explicit
+Node `--test --test-reporter=spec` argv, completed capture of both pipes, exit zero,
+empty runner stderr, flat success records and one complete ordered eight-line
+summary. UTF-8, LF/CRLF, all record names/durations and totals are checked; any
+unknown line, warning, skip/todo/nesting, missing/duplicate summary, invalid byte,
+nonzero/unknown exit, cancellation, timeout or capture failure returns verbatim.
+No byte cap, ANSI stripping, totals-only inference or streaming compaction.
+The child environment removes `NODE_TEST_CONTEXT`, `NODE_OPTIONS` and
+`NODE_V8_COVERAGE` and sets `FORCE_COLOR=0`; parent/global environment is unchanged.
+Worker diagnostics can appear in runner stdout, and remain verbatim there.
+
+Schema2 `compact` includes real command/cwd, run ID, Node version, terminal/EOF/
+capture state, counts/duration, diagnostics and a verified original descriptor.
+Host call correlation is explicitly unavailable. Schema2 `verbatim` has a reason
+and complete received stdout/stderr, as lossless UTF-8 or base64 for invalid UTF-8.
+These are the producer's received pipes; their global interleaving is not claimed.
+The wrapper exit code reports test-command failure independently of compact status.
+
+`createOriginalStore` stores both exact byte streams plus provenance in one
+version1 binary bundle. An exclusive staging writer is closed before atomic
+hardlink publication; final readback checks length, hash, ID and each stream.
+The final filename is occurrence-specific; collision refuses overwrite. Only
+staging is removed; published originals have no automatic cleanup. The caller
+supplies a trusted local artifact directory. Unsupported filesystem publication
+or sandbox denial returns verbatim; NTFS publication was tested outside sandbox.
+This establishes complete-file visibility, not power-loss durability. Readback
+detects subsequent corruption/removal; callers must preserve required references.
+Legacy `compactToolOutput`/`testEvidence`/CLI retain schema1 behavior, including
+`reported_passed`; it is never eligible evidence for the strict producer.
+
 Design provenance/caveats: `tasks/main-context-research/report.md`; current local
 acceptance and Desktop gate: `tasks/main-context-gateway/contract.md`.
