@@ -40,7 +40,7 @@ export function serve({ input = process.stdin, output = process.stdout, ...optio
     finally { active.delete(id); }
   }
   input.on('data', chunk => {
-    // Scan bytes before concatenation so even one huge chunk cannot grow retained state.
+    // Preserve LF-delimited frames across chunks; input bytes have no local cap.
     let offset = 0;
     while (offset < chunk.length) {
       const end = chunk.indexOf(10, offset), finish = end < 0 ? chunk.length : end;

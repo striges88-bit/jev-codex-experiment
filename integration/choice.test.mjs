@@ -118,8 +118,8 @@ test('C03/C04/C07: strict inputs, secret protection and lossless context', async
     const context = [{ id: 'one', text: long, protected: true }, { id: 'two', text: 'SECOND', protected: false }];
     assert.equal((await c.call('jev_choice', { ...args, context })).status, 'selected');
     assert.deepEqual(sent[0].state, { task, context });
-    assert.equal((await c.call('jev_choice', { ...args, context: [{ id: 'huge', text: 'я'.repeat(32100), protected: false }] })).fallback.code, 'input_limit');
-    assert.equal(sent.length, 1);
+    assert.equal((await c.call('jev_choice', { ...args, context: [{ id: 'huge', text: 'я'.repeat(32100), protected: false }] })).status, 'selected');
+    assert.equal(sent.length, 2);
     assert.equal((await c.request('tools/call', { name: 'unknown', arguments: args })).error.code, -32601);
   } finally { c.close(); }
 });
@@ -246,7 +246,7 @@ test('C12: actual token counts are allowlisted per call; unknown values remain n
   } finally { c.close(); }
 });
 
-test('C06: exact byte boundaries for frame, arguments, POST body and streamed response', async () => {
+test('C06: incoming frame, arguments and POST exceed former byte caps; streamed response guard remains', {timeout:2000}, async () => {
   let responseBytes = 32768, count = 0, lastBody;
   const c = client({ fetchImpl: async (_url, init) => {
     count++; lastBody = init.body;
@@ -256,10 +256,10 @@ test('C06: exact byte boundaries for frame, arguments, POST body and streamed re
   try {
     const ping = { jsonrpc: '2.0', id: 900, method: 'ping', params: { padding: '' } };
     const overhead = Buffer.byteLength(JSON.stringify(ping));
-    ping.params.padding = 'x'.repeat(131072 - overhead);
+    ping.params.padding = 'x'.repeat(262144 - overhead);
     assert.deepEqual((await c.raw(JSON.stringify(ping) + '\n')).result, {});
     ping.params.padding += 'x';
-    assert.equal((await c.raw(JSON.stringify(ping) + '\n')).error.code, -32600);
+    assert.deepEqual((await c.raw(JSON.stringify(ping) + '\n')).result, {});
     assert.equal((await c.raw('{invalid json}\n')).error.code, -32700);
     assert.equal((await c.raw('[]\n')).error.code, -32600);
     const { subtask_id } = await c.call('jev_begin_subtask', { schema_version: 1 });
@@ -267,16 +267,14 @@ test('C06: exact byte boundaries for frame, arguments, POST body and streamed re
     assert.equal((await c.call('jev_choice', args)).status, 'selected');
     const originalBodyBytes = Buffer.byteLength(lastBody);
     // Keep Cyrillic multibyte content; fill independently from observed POST length.
-    args.context[0].text += 'x'.repeat(64000 - originalBodyBytes);
+    args.context[0].text += 'x'.repeat(262144 - originalBodyBytes);
     assert.equal((await c.call('jev_choice', args)).status, 'selected');
-    assert.equal(Buffer.byteLength(lastBody), 64000);
+    assert.equal(Buffer.byteLength(lastBody), 262144);
     args.context[0].text += 'x';
     const before = count;
-    assert.equal((await c.call('jev_choice', args)).fallback.code, 'input_limit'); assert.equal(count, before);
-    const argsLength = Buffer.byteLength(JSON.stringify(args));
-    args.context[0].text += 'x'.repeat(64001 - argsLength);
-    assert.equal(Buffer.byteLength(JSON.stringify(args)), 64001);
-    assert.equal((await c.call('jev_choice', args)).fallback.code, 'input_limit'); assert.equal(count, before);
+    assert.equal((await c.call('jev_choice', args)).status, 'selected'); assert.equal(count, before + 1);
+    assert.ok(Buffer.byteLength(JSON.stringify(args)) > 131072);
+    assert.deepEqual(JSON.parse(lastBody).state, { task, context: args.context });
     responseBytes = 32769; args.context = [];
     assert.equal((await c.call('jev_choice', args)).fallback.code, 'response_limit');
   } finally { c.close(); }

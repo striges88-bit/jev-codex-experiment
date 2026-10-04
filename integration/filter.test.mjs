@@ -90,7 +90,7 @@ test('C02/C03: filter threshold/allowed IDs and complete protected inventory; sh
   assert.equal(shadow.threshold,0.9); assert.equal(shadow.context_action,'preserve_full'); assert.equal(shadow.recommendations[4].decision,'keep');
 });
 
-test('C01/C04/C05/C07: strict policy/version/binding/protection/secrets/limits reject before HTTP', async () => {
+test('C01/C04/C05/C07: strict policy/version/binding/protection/secrets reject before HTTP', async () => {
   const { engine, args, calls } = await opened();
   const cases = [
     [x => delete x.policy,'invalid_request'], [x => x.policy.threshold=0.9,'invalid_policy'],
@@ -101,7 +101,7 @@ test('C01/C04/C05/C07: strict policy/version/binding/protection/secrets/limits r
     [x => x.context.reverse(),'binding_mismatch'], [x => x.context[3].text+='changed','binding_mismatch'],
     [x => x.context[0].protected=false,'invalid_request'], [x => x.context[1].kind='unknown','invalid_request'],
     [x => {x.context[3].id='fixture-key';x.policy.allowed_fragment_ids=['fixture-key','b'];},'secret_suspected'], [x => x.policy.approval_id='fixture-key','secret_suspected'],
-    [x => x.context[3].text='x'.repeat(64000),'input_limit'],
+    [x => x.context[3].text='x'.repeat(200000),'binding_mismatch'],
   ];
   for (const [mutate, code] of cases) {
     const input=structuredClone(args); mutate(input);

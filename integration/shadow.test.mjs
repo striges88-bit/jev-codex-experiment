@@ -77,26 +77,23 @@ test('S01/S02/S03: external shadow Noul mapping, threshold and protected invento
   } finally {c.close();}
 });
 
-test('S06: exact provider/argument byte limits and size pressure do not truncate state',async()=>{
+test('S06: large arguments and POST preserve state; batching depends on question count only',{timeout:2000},async()=>{
   let calls=0,last;
   const c=client({now:()=>0,fetchImpl:async(url,o)=>{calls++;last=o.body;return Response.json(noul(o.body));}});
   try{
     const args=await open(c); args.context=[{id:'u',text:'я\\"🙂',protected:false,kind:'reference'}];
     assert.equal((await c.call('jev_shadow_filter',args)).status,'shadow_complete');
-    args.context[0].text+='x'.repeat(64000-Buffer.byteLength(last));
-    assert.equal((await c.call('jev_shadow_filter',args)).status,'shadow_complete');assert.equal(Buffer.byteLength(last),64000);
+    args.context[0].text+='x'.repeat(262144-Buffer.byteLength(last));
+    assert.equal((await c.call('jev_shadow_filter',args)).status,'shadow_complete');assert.equal(Buffer.byteLength(last),262144);
     args.context[0].text+='x';const before=calls;
-    assert.equal((await c.call('jev_shadow_filter',args)).fallback.code,'input_limit');assert.equal(calls,before);
-    args.context[0].text+='x'.repeat(64000-Buffer.byteLength(JSON.stringify(args)));
-    assert.equal(Buffer.byteLength(JSON.stringify(args)),64000);
-    assert.equal((await c.call('jev_shadow_filter',args)).fallback.code,'input_limit');assert.equal(calls,before);
-    args.context[0].text+='x';assert.equal(Buffer.byteLength(JSON.stringify(args)),64001);
-    assert.equal((await c.call('jev_shadow_filter',args)).fallback.code,'input_limit');assert.equal(calls,before);
-    args.context=Array.from({length:9},(_,i)=>({id:`r${i}`,text:i===0?'x'.repeat(62000):'Reference',protected:false,kind:'reference'}));
+    assert.equal((await c.call('jev_shadow_filter',args)).status,'shadow_complete');assert.equal(calls,before+1);
+    assert.ok(Buffer.byteLength(JSON.stringify(args))>131072);assert.deepEqual(JSON.parse(last).state,{task:args.task,context:args.context});
+    args.context=Array.from({length:9},(_,i)=>({id:`r${i}`,text:i===0?'x'.repeat(200000):'Reference',protected:false,kind:'reference'}));
     const bodies=[]; const pressure=client({fetchImpl:async(url,o)=>{bodies.push(o.body);return Response.json(noul(o.body));}});
     try{const p={...args,subtask_id:(await open(pressure)).subtask_id};
       assert.equal((await pressure.call('jev_shadow_filter',p)).status,'shadow_complete');
-      assert.ok(bodies.length>2,JSON.stringify(bodies.map(b=>({bytes:Buffer.byteLength(b),questions:Object.keys(JSON.parse(b).questions).length}))));for(const b of bodies){assert.ok(Buffer.byteLength(b)<=64000);assert.deepEqual(JSON.parse(b).state.context,p.context);}
+      assert.equal(bodies.length,2);assert.deepEqual(bodies.map(b=>Object.keys(JSON.parse(b).questions).length),[8,1]);
+      for(const b of bodies){assert.ok(Buffer.byteLength(b)>131072);assert.deepEqual(JSON.parse(b).state.context,p.context);}
     }finally{pressure.close();}
   }finally{c.close();}
 });
@@ -200,7 +197,7 @@ test('S02/S03/S11: overrides, protection downgrade, invalid inventory and secret
       [a=>a.context[1].protected=false,'invalid_request'],[a=>a.context[2].protected=false,'invalid_request'],
       [a=>a.context[3].kind='arbitrary','invalid_request'],[a=>a.context[3].id='rules','invalid_request'],
       [a=>a.task.scope='secret=synthetic','secret_suspected'],[a=>a.context[3].text='Bearer synthetic','secret_suspected'],
-      [a=>a.context[3].id='fixture-key','secret_suspected'],[a=>a.task.goal='x'.repeat(2049),'input_limit'],
+      [a=>a.context[3].id='fixture-key','secret_suspected'],[a=>a.task.goal='','invalid_request'],
     ]) {
       const a=structuredClone(args); mutate(a); const r=await c.call('jev_shadow_filter',a);
       assert.equal(r.fallback.code,code); assert.deepEqual(r.recommendations,[]); assert.equal(r.measured.jev_requests,0);
@@ -240,7 +237,7 @@ test('S04/S06/S12: full state in each bounded packet; aggregate usage distinct f
     const r=await c.call('jev_shadow_filter',args);
     assert.equal(r.status,'shadow_complete');assert.equal(bodies.length,3);
     assert.deepEqual(bodies.map(b=>Object.keys(JSON.parse(b).questions).length),[8,8,1]);
-    for(const b of bodies){assert.ok(Buffer.byteLength(b)<=64000);assert.deepEqual(JSON.parse(b).state,{task:args.task,context:args.context});}
+    for(const b of bodies){assert.deepEqual(JSON.parse(b).state,{task:args.task,context:args.context});}
     assert.equal(JSON.stringify(args),baseline);assert.equal(r.measured.input_tokens,9);assert.equal(r.measured.output_tokens,6);
     assert.equal(r.measured.subagent_runtime_ms,null);assert.equal(r.measured.cost_usd,null);
     assert.equal(r.budget.requests_used,3); assert.equal(r.measured.jev_requests,3);

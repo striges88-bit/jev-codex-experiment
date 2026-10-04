@@ -53,7 +53,6 @@ export function validate(name, args, apiKey) {
   if (name === 'jev_end_subtask') return null;
   if (!exact(args.task, ['goal', 'scope', 'done_when']) || !Object.values(args.task).every(nonempty) ||
       !Array.isArray(args.context) || args.context.length > 64) return 'invalid_request';
-  if (Object.values(args.task).some(value => Buffer.byteLength(value) > 2048)) return 'input_limit';
   const seen = new Set(), texts = Object.values(args.task);
   for (const item of args.context) {
     if (!exact(item, ['jev_shadow_filter','jev_evaluate','jev_filter_context'].includes(name) ? ['id', 'text', 'protected', 'kind'] : ['id', 'text', 'protected']) || typeof item.id !== 'string' || !/^[A-Za-z0-9_.:-]{1,64}$/.test(item.id) ||

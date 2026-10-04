@@ -1,3 +1,4 @@
-// Local UTF-8 guardrails, not a statement of provider capacity.
-export const requestBytes = 64000;
-export const frameBytes = 131072; // JSON-RPC wrapper and escaped tool content need headroom.
+// No local input byte cap: submit complete state and fall back on provider failure.
+// These exports keep existing validation/packet-planning consumers compatible.
+export const requestBytes = Infinity;
+export const frameBytes = Infinity;

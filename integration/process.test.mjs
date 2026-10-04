@@ -14,7 +14,7 @@ test('E12: executable evaluation MCP exposes only allowlisted estimates and writ
     const c=processClient(process.execPath,['--input-type=module','--eval',bootstrap],{cwd});
     try{const {subtask_id}=await c.call('jev_begin_subtask',{schema_version:1});
       const r=await c.call('jev_evaluate',{schema_version:1,subtask_id,task:{goal:'Synthetic',scope:'Synthetic',done_when:'Synthetic'},
-        context:[{id:'local',text:'PRIVATE_CONTEXT_MARKER',protected:true,kind:'instruction'}],
+        context:[{id:'local',text:'PRIVATE_CONTEXT_MARKER'+'.'.repeat(200000)+'_END',protected:true,kind:'instruction'}],
         material:{answer:'PRIVATE_ANSWER_MARKER',baseline:null,diff:null,checks:null}});
       assert.equal(r.status,failure?'fallback':'estimated');assert.equal(r.measured.jev_requests,1);
       for(const marker of ['PRIVATE_FIXTURE_KEY','PRIVATE_ERROR_BODY','PRIVATE_RAW_BODY','PRIVATE_CONTEXT_MARKER','PRIVATE_ANSWER_MARKER'])assert.ok(!JSON.stringify(r).includes(marker));
