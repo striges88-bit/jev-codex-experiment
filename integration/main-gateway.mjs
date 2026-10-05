@@ -7,7 +7,8 @@ import { readFileSync, appendFileSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { sha256 } from './context-binding.mjs';
-import { createMainContextSelector, mainInventory, mainScope } from './main-context.mjs';
+import { createMainContextSelector } from './main-context.mjs';
+import { mainInventory, mainScope } from './main-context-contract.mjs';
 import { websocketText, encodeTextFrame } from './websocket-context.mjs';
 import { responseContext } from './response-context.mjs';
 import { secretSuspected } from './schema.mjs';
@@ -43,14 +44,14 @@ function observeRequest(receipt, fields, headers) {
 }
 
 export function createMainGateway({ capability, policy = () => null, receipt = () => {}, inspect=()=>{},
-  upstream = 'https://chatgpt.com', testUpstream = false } = {}) {
+  upstream = 'https://chatgpt.com', testUpstream = false,authorizeQualityPilot=null,prepareQualityPilot=null } = {}) {
   if (!/^[a-f0-9]{32}$/.test(capability ?? '')) throw Error('invalid_capability');
   const target = new URL(upstream);
   if ((!testUpstream && upstream !== 'https://chatgpt.com') || target.username || target.password ||
       target.pathname !== '/' || target.search || target.hash ||
       (testUpstream && !['127.0.0.1','localhost'].includes(target.hostname))) throw Error('invalid_upstream');
   const request = target.protocol === 'https:' ? https.request : http.request;
-  const selector = createMainContextSelector({allowOfflineFilter:testUpstream});
+  const selector = createMainContextSelector({allowOfflineFilter:testUpstream,authorizeQualityPilot,prepareQualityPilot});
   const sockets = new Set();
   const safeReceipt = row => { try { receipt(row); } catch { /* telemetry cannot alter transport */ } };
   const allowed = req => !req.headers.origin &&
@@ -86,6 +87,7 @@ export function createMainGateway({ capability, policy = () => null, receipt = (
             row.scope_sha256 = mainScope(body,req.headers);
             row.input_sha256 = inventory.input_sha256;
             row.groups = inventory.groups;
+            try{inspect(body,inventory,row.scope_sha256,row.thread_sha256,req.headers);}catch{/* inspection never grants authority */}
           } catch { row.inventory_status = 'unknown'; }
           const currentPolicy = policy(),authorityKey=JSON.stringify(currentPolicy);
           const selection = body.generate===false?{request:body,applied:false,reason:'warmup',protected:[],excluded:[]}:
@@ -156,7 +158,7 @@ export function createMainGateway({ capability, policy = () => null, receipt = (
       socket.write(`HTTP/1.1 101 Switching Protocols\r\n${Object.entries(headers).map(([k,v]) => `${k}: ${v}`).join('\r\n')}\r\n\r\n`);
       peer.on('error',() => { socket.destroy(); finish(); });
       peer.on('close',() => { socket.destroy(); finish(); });
-      const context=responseContext({selector,policy,headers:req.headers,inspect:(body,inventory,scope)=>inspect(body,inventory,scope,row.thread_sha256)});
+      const context=responseContext({selector,policy,headers:req.headers,inspect:(body,inventory,scope)=>inspect(body,inventory,scope,row.thread_sha256,req.headers)});
       socket.on('close',()=>context.clear());
       const observer=websocketText({masked:false,rewrite:bytes=>{const completed=context.observe(bytes);if(completed)safeReceipt({...row,...completed,phase:'response_completed',message_sequence:sequence,observed_at:new Date().toISOString()});return bytes;},unsupported:()=>context.invalidate()});
       observer.on('error',()=>context.invalidate());observer.resume();

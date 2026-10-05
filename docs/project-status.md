@@ -1,5 +1,11 @@
 # JEV-LAYER: project checkpoint — 2026-10-04
 
+## Current addendum — 2026-10-06
+
+#19 remains PARTIAL/OPEN with five criteria checked and the final one pending. Its source-first state-only coordinator and two approved architecture changes are verified offline: focused gateway/WS **184/184**, full `npm test` **271/271 PASS**. Shared inventory/scope/binding rules remove the selector/proof import cycle; the final WS sink retains one complete source/authority/payload check instead of two adjacent source checks. Existing exported contracts and tests/logs/Git producers are preserved. Ordinary Desktop schema2 apply remains disabled; native duplicate/state/continuation/revoke proof is still pending.
+
+Use [the ordered #19 plan](issue-19-completion-plan.md) and [ADR 0001](adr/0001-source-first-native-pilot.md) as the current continuation point. History comparison stays in gateway memory; a full conversation archive for later independent replay is not provided. Code-pinned previous packets become stale and spent attempts remain spent. Publication is not activation, production promotion or measured benefit. Finish the agreed narrow native #19 matrix before #20 → #21 → #22 → #23 → #24 → #25; their requirements and dependencies remain unchanged. The tables below retain their original dated audit scope.
+
 Public версия полной матрицы: 38 функций, 18 проверенных предположений, два подтверждённых дефекта и 15 существенных пробелов. Основание — завершённый read-only audit baseline `73c0b30` и последующее согласование 18 решений. Последующее узкое изменение #16 добавляет явный completed test producer и strict original/readback путь; [проверка #16](issue-16-validation.md). Приватные исходные журналы, переписка, configuration/binding и диагностические пакеты не публикуются.
 
 Runtime-строки ниже — датированные свидетельства аудита, **не свежая проверка runtime в момент commit/push**. В последнем исследовательском наблюдении маршрут этого существующего Desktop-чата работал, но binding после изменения inventory не подходил: effective exclusions=0, полный fallback. Ранее один разрешённый WS removal и live revoke/full restoration были подтверждены. Это не доказывает постоянный автоматический отбор, экономию токенов или production readiness.

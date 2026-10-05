@@ -1,4 +1,4 @@
-import { mainInventory, mainScope } from './main-context.mjs';
+import { mainInventory, mainScope } from './main-context-contract.mjs';
 import { sha256 } from './context-binding.mjs';
 
 const knownTypes=new Set(['additional_tools','agent_message','message','function_call','function_call_output','custom_tool_call','custom_tool_call_output','reasoning','compaction','item_reference']);
@@ -8,6 +8,7 @@ const parse=bytes=>JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes
 // Reconstruct original input before selecting; retain native incremental bytes
 // only for an unchanged selected prefix. Revocation restores the server prefix.
 export function responseContext({selector,policy,headers,inspect=()=>{}}) {
+  const connection=Object.freeze({});
   let pending=null,last=null,everFiltered=false;
   return {
     prepare(before) {
@@ -32,6 +33,7 @@ export function responseContext({selector,policy,headers,inspect=()=>{}}) {
       }
       if(pending){if(everFiltered)return {payload:null,receipt:{...receipt,reason:'context_chain_unavailable'}};pending=null;last=null;return {payload:before,receipt};}
       if(!Array.isArray(original.input))return {payload:everFiltered?null:before,receipt};
+      const originalKey=JSON.stringify(original),verifiedPrefix=inherited&&last.orderedContextVerified===true;
       try{
         const inventory=mainInventory(original),scope=mainScope(original,headers);
         Object.assign(receipt,{input_sha256:inventory.input_sha256,groups:inventory.groups,scope_sha256:scope,inventory_status:'complete',original_input_items:original.input.length});
@@ -42,7 +44,8 @@ export function responseContext({selector,policy,headers,inspect=()=>{}}) {
       try{
         const current=policy();
         authorityKey=JSON.stringify(current);
-        selection=body.generate===false?{request:original,applied:false,reason:'warmup',protected:[],excluded:[]}:selector.select(original,headers,current);
+        selection=body.generate===false?{request:original,applied:false,reason:'warmup',protected:[],excluded:[]}:selector.select(original,headers,current,
+          {connection,inherited,original_prefix:inherited?last.input:null});
       }catch{selection=preserve();}
       const complete=selection=>{
       try{if(authorityKey!==undefined&&JSON.stringify(policy())!==authorityKey)throw Error('authority_changed');selection.validateOriginals?.();}
@@ -56,7 +59,7 @@ export function responseContext({selector,policy,headers,inspect=()=>{}}) {
       Object.assign(receipt,{context_selected:selection.applied,incremental_reused:reuse,context_prefix_reused:reuse,applied:selection.applied&&!reuse});
       const changed=selection.applied&&!reuse||inherited&&!selection.applied;
       receipt.request_changed=changed;receipt.task_state_attached&&=!reuse;receipt.duplicate_removed&&=!reuse;
-      const entry={input:original.input,selected_input:selection.request.input,signature,filtered:selection.applied,output:[],warmup:body.generate===false};
+      const entry={input:original.input,selected_input:selection.request.input,signature,filtered:selection.applied,output:[],warmup:body.generate===false,orderedContextVerified:false};
       pending=entry;
       const previousEver=everFiltered;
       everFiltered||=selection.applied;
@@ -64,13 +67,25 @@ export function responseContext({selector,policy,headers,inspect=()=>{}}) {
       // Called by the actual WS sink, including after downstream backpressure.
       // Revocation can restore a known chain; unknown chains were rejected above.
       const commit=()=>{
-        try{if(authorityKey!==undefined&&JSON.stringify(policy())!==authorityKey)throw Error('authority_changed');selection.validateOriginals?.();return payload;}
+        try{if(authorityKey!==undefined&&JSON.stringify(policy())!==authorityKey)throw Error('authority_changed');
+          if(selection.verifyForwarded){receipt.ordered_context_verified=selection.verifyForwarded(payload,reuse?body:selection.request);entry.orderedContextVerified=true;}
+          else {
+            selection.validateOriginals?.();
+            if(verifiedPrefix&&!selection.applied){
+              if(JSON.stringify(parse(payload))!==originalKey)throw Error('state_only_comparison_failed');
+              receipt.ordered_context_verified=true;
+            }
+          }
+          return payload;}
         catch{
           if(pending!==entry)throw Error('context_chain_unavailable');
           entry.selected_input=original.input;entry.filtered=false;entry.signature=null;everFiltered=previousEver;
           Object.assign(receipt,{reason:'preserve_full',applied:false,request_changed:inherited,task_state_attached:false,duplicate_removed:false,excluded:[],
             context_selected:false,incremental_reused:false,context_prefix_reused:false,full_context_restored:inherited});
-          return inherited?Buffer.from(JSON.stringify(original)):before;
+          if(selection.verifyForwarded)receipt.ordered_context_verified=false;
+          const restored=inherited?Buffer.from(JSON.stringify(original)):before;
+          if(verifiedPrefix){if(JSON.stringify(parse(restored))!==originalKey)throw Error('context_chain_unavailable');receipt.ordered_context_verified=true;}
+          return restored;
         }
       };
       return {payload,receipt,commit};

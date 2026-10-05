@@ -4,7 +4,7 @@ Experimental local MCP integration inspired by [typakon4/jev-layer](https://gith
 
 Implemented: advisory Choice between `gpt-6-luna/max` and `gpt-6.1-sol/low`, shadow and scoped opt-in context filtering, Score/Noul evaluation with local evidence review, and a Desktop HTTP/WebSocket gateway with explicit authorization, original reconstruction and full restoration. MCP operations share a server-owned budget of 30 HTTP attempts and 30 seconds of cumulative provider waiting per lifecycle. The gateway uses local authorization and does not call TypeSafe to select history. The server does not launch agents.
 
-The [project checkpoint and full feature matrix](docs/project-status.md) distinguish implemented behavior, bounded historical verification and unresolved defects. General context savings and production readiness are not established. The agreed next direction is [context/tool-output/evaluate v1](docs/context-quality-v1.md), with a [measurement protocol](docs/measurement-design.md); this redesign has not been implemented.
+The [project checkpoint and full feature matrix](docs/project-status.md) distinguish implemented behavior, bounded historical verification and unresolved defects. General context savings and production readiness are not established. Development follows [context/tool-output/evaluate v1](docs/context-quality-v1.md) and its [measurement protocol](docs/measurement-design.md). The current [#19 completion plan](docs/issue-19-completion-plan.md) records verified offline code, the approved architecture amendment and the remaining native Desktop gate; the full production pipeline is unfinished.
 
 Requires Node.js 24 or newer. No package dependencies or installation step.
 

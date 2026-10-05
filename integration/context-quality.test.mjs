@@ -18,6 +18,79 @@ import net from 'node:net';
 import {encodeTextFrame} from './websocket-context.mjs';
 import {sha256} from './context-binding.mjs';
 import {writeFileSync} from 'node:fs';
+import {createQualityPilot,qualityPilotCodeHashes} from './quality-pilot.mjs';
+
+const pilotPacket=(fx,expires=Date.now()+60000)=>({schema_version:1,pilot_id:'live19-fixture',task_id:'fixture-task',
+  thread_sha256:sha256(headers['thread-id']),scope_sha256:fx.binding.scope_sha256,binding_sha256:fx.binding.binding_sha256,
+  policy_sha256:sha256(JSON.stringify(fx.policy)),code_hashes:qualityPilotCodeHashes(),expires_at_ms:expires,max_attempts:1});
+test('Live19: no approval, wrong packet/thread/scope/inventory and explicit revoke preserve original',async t=>{
+  for(const kind of ['absent','wrong approval','thread','scope','inventory','policy','revoked'])await t.test(kind,async()=>{
+    const fx=await setup(),packet=pilotPacket(fx),grant={approved:true,packet_sha256:sha256(JSON.stringify(packet))};
+    const pilot=createQualityPilot(packet,{approval:()=>kind==='absent'?null:kind==='wrong approval'?{...grant,packet_sha256:'f'.repeat(64)}:grant});
+    if(kind==='revoked')pilot.revoke();
+    const incoming=kind==='thread'?{...headers,'thread-id':'other-thread'}:headers;
+    if(kind==='scope')fx.request.model='another-model';
+    if(kind==='inventory')fx.request.input.push(message('new steering'));
+    if(kind==='policy')fx.policy.revision++;
+    const selected=await createMainContextSelector({authorizeQualityPilot:pilot.authorize}).select(fx.request,incoming,fx.policy);
+    assert.equal(selected.applied,false);assert.deepEqual(selected.request,fx.request);
+  });
+});
+test('Live19: expiry/revoked approval are rechecked at final WS commit; selected payload never escapes',async t=>{
+  for(const kind of ['expiry','approval revoked','pilot revoked'])await t.test(kind,async()=>{
+    const fx=await setup(),clock=Date.now(),packet=pilotPacket(fx,clock+60000);
+    let current=clock,grant={approved:true,packet_sha256:sha256(JSON.stringify(packet))};
+    const pilot=createQualityPilot(packet,{approval:()=>grant,now:()=>current});
+    const flow=responseContext({selector:createMainContextSelector({authorizeQualityPilot:pilot.authorize}),policy:()=>fx.policy,headers});
+    const before=Buffer.from(JSON.stringify({type:'response.create',...fx.request}));
+    const pending=await flow.prepare(before);assert.equal(pending.receipt.task_state_attached,true);
+    if(kind==='expiry')current=clock+60000;
+    if(kind==='approval revoked')grant.approved=false;
+    if(kind==='pilot revoked')pilot.revoke();
+    assert.deepEqual(pending.commit(),before);assert.equal(pending.receipt.applied,false);
+    assert.equal(pending.receipt.task_state_attached,false);assert.equal(pilot.status().attempts,1);
+  });
+});
+test('Live19: approved exact duplicate packet removes only its frozen occurrence; failed originals spend attempt',async()=>{
+  const fx=await duplicate(await setup()),packet=pilotPacket(fx);
+  const pilot=createQualityPilot(packet,{approval:()=>({approved:true,packet_sha256:sha256(JSON.stringify(packet))})});
+  const selected=await createMainContextSelector({authorizeQualityPilot:pilot.authorize}).select(fx.request,headers,fx.policy);
+  assert.deepEqual(selected.request.input.slice(0,-1),[fx.request.input[0],...fx.request.input.slice(2)]);
+  assert.deepEqual(selected.excluded,[fx.binding.occurrences[1].id]);
+  const bad=await setup(),badPacket=pilotPacket(bad);
+  const badPilot=createQualityPilot(badPacket,{approval:()=>({approved:true,packet_sha256:sha256(JSON.stringify(badPacket))})});
+  await unlink(bad.state.sources[0].original.path);
+  const failure=await createMainContextSelector({authorizeQualityPilot:badPilot.authorize}).select(bad.request,headers,bad.policy);
+  assert.equal(failure.applied,false);assert.equal(badPilot.status().attempts,1);
+});
+test('Live19: malformed code versions, lifetime or expanded caps cannot construct an owner',async()=>{
+  const fx=await setup(),packet=pilotPacket(fx);
+  for(const invalid of [{...packet,max_attempts:2},{...packet,expires_at_ms:Date.now()+16*60000},
+      {...packet,code_hashes:{}},{...packet,untrusted_override:true}])assert.throws(()=>createQualityPilot(invalid),/invalid_pilot_packet/);
+});
+test('Live19: wall-clock rollback cannot extend the monotonic pilot lease',async()=>{
+  const fx=await setup(),clock=Date.now(),packet=pilotPacket(fx,clock+60000);
+  let wall=clock,tick=100;
+  const pilot=createQualityPilot(packet,{now:()=>wall,monotonic:()=>tick,approval:()=>({approved:true,packet_sha256:sha256(JSON.stringify(packet))})});
+  wall-=600000;tick+=60000;
+  const selected=await createMainContextSelector({authorizeQualityPilot:pilot.authorize}).select(fx.request,headers,fx.policy);
+  assert.equal(selected.applied,false);assert.deepEqual(selected.request,fx.request);
+});
+test('Live19: a locally approved exact packet grants one state-only attempt; second attempt is full',async()=>{
+  const fx=await setup(),expires=Date.now()+60000;
+  const packet={schema_version:1,pilot_id:'live19-fixture',task_id:'fixture-task',
+    thread_sha256:sha256(headers['thread-id']),scope_sha256:fx.binding.scope_sha256,
+    binding_sha256:fx.binding.binding_sha256,policy_sha256:sha256(JSON.stringify(fx.policy)),
+    code_hashes:qualityPilotCodeHashes(),expires_at_ms:expires,max_attempts:1};
+  const approval={packet_sha256:sha256(JSON.stringify(packet)),approved:true};
+  const pilot=createQualityPilot(packet,{approval:()=>approval});
+  const selector=createMainContextSelector({authorizeQualityPilot:pilot.authorize});
+  const first=await selector.select(fx.request,headers,fx.policy);
+  assert.equal(first.applied,true);assert.deepEqual(first.request.input,[...fx.request.input,expectedStateItem(fx.state)]);
+  const second=await selector.select(fx.request,headers,fx.policy);
+  assert.equal(second.applied,false);assert.deepEqual(second.request,fx.request);
+  assert.equal(pilot.status().attempts,1);
+});
 
 const headers={'thread-id':'quality-fixture-thread','chatgpt-account-id':'quality-fixture-account','content-type':'application/json'};
 const message=text=>({type:'message',role:'assistant',content:[{type:'output_text',text}]});
@@ -78,14 +151,14 @@ test('C03: only the permitted same-artifact occurrence disappears; canonical and
   }
 });
 
-async function httpFixture(t,fx,getPolicy=()=>fx.policy) {
+async function httpFixture(t,fx,getPolicy=()=>fx.policy,gatewayOptions={}) {
   const received=[],receipts=[],upstreamSockets=new Set(),upstream=http.createServer(async(req,res)=>{
     const chunks=[];for await(const chunk of req)chunks.push(chunk);
     received.push({headers:req.headers,path:req.url,bytes:Buffer.concat(chunks)});res.end('ok');
   });
   upstream.on('connection',socket=>{upstreamSockets.add(socket);socket.on('close',()=>upstreamSockets.delete(socket));});
   upstream.listen(0,'127.0.0.1');await once(upstream,'listening');
-  const gateway=createMainGateway({capability:'e'.repeat(32),testUpstream:true,upstream:`http://127.0.0.1:${upstream.address().port}`,policy:getPolicy,receipt:row=>receipts.push(structuredClone(row))});
+  const gateway=createMainGateway({capability:'e'.repeat(32),testUpstream:true,upstream:`http://127.0.0.1:${upstream.address().port}`,policy:getPolicy,receipt:row=>receipts.push(structuredClone(row)),...gatewayOptions});
   gateway.server.listen(0,'127.0.0.1');await once(gateway.server,'listening');
   t.after(async()=>{await gateway.stop();for(const socket of upstreamSockets)socket.destroy();upstream.closeAllConnections();await new Promise(resolve=>upstream.close(resolve));});
   const url=`http://127.0.0.1:${gateway.server.address().port}/jev/${'e'.repeat(32)}/backend-api/codex/responses`;
@@ -320,8 +393,8 @@ function frameReader(onPayload) {
     }
   };
 }
-async function wsFixture(t,fx,getPolicy=()=>fx.policy) {
-  const transport=await httpFixture(t,fx,getPolicy),actual=[],replies=[],waiters=[];
+async function wsFixture(t,fx,getPolicy=()=>fx.policy,gatewayOptions={}) {
+  const transport=await httpFixture(t,fx,getPolicy,gatewayOptions),actual=[],replies=[],waiters=[];
   transport.upstream.on('upgrade',(_req,socket)=>{
     socket.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: fixture\r\n\r\n');
     socket.on('data',frameReader(bytes=>{actual.push(bytes);socket.write(encodeTextFrame(Buffer.from(JSON.stringify({type:'response.completed',response:{id:`response-${actual.length}`,output:replies[actual.length-1]??[]}})),false));}));
@@ -422,4 +495,147 @@ test('C07: actual read denial on one fixture original returns full; removing fix
   } finally {await execute('icacls',[ref.path,'/remove:d',principal],{windowsHide:true});}
   assert.ok((await fx.store.read(ref)).stdout.equals(original.stdout));
   assert.equal((await createMainContextSelector({allowOfflineFilter:true}).select(fx.request,headers,fx.policy)).applied,true);
+});
+
+
+function sourcePilot(fx,{approval=null,packetChange={},manifestChange={},spentPath=join(fx.dir,'pilot-spent.json')}={}) {
+  const state=structuredClone(fx.state);delete state.binding_sha256;
+  const manifest={schema_version:1,task_id:'fixture-task',inventory_revision:'source-inventory-1',state,...manifestChange};
+  const packet={schema_version:2,pilot_id:'source-fixture',task_id:'fixture-task',thread_sha256:sha256(headers['thread-id']),
+    scope_sha256:fx.binding.scope_sha256,source_manifest_sha256:sha256(JSON.stringify(manifest)),state_sha256:sha256(JSON.stringify(state)),
+    code_hashes:qualityPilotCodeHashes(2),expires_at_ms:Date.now()+60000,max_initial_applies:1,operation:'state_only',spent_path_sha256:sha256(spentPath),...packetChange};
+  const grant={approved:true,packet_sha256:sha256(JSON.stringify(packet))};
+  const pilot=createQualityPilot(packet,{manifest,spentPath,approval:approval??(()=>grant)});
+  const selector=createMainContextSelector({prepareQualityPilot:pilot.prepare});
+  const flow=()=>responseContext({selector,policy:()=>pilot.policy(),headers});
+  return {pilot,packet,manifest,grant,selector,flow,spentPath};
+}
+
+test('D09: WS sink uses one complete check and retains both validator branches',async t=>{
+  for(const verified of [false,true])for(const revoked of [false,true])await t.test(`${verified?'ordered':'legacy'} ${revoked?'revoked':'active'}`,()=>{
+    const request={type:'response.create',...original()},before=Buffer.from(JSON.stringify(request));
+    const selected={...request,input:[...request.input,message('Sourced state')]};
+    let validations=0,comparisons=0,denied=false;
+    const validateOriginals=()=>{validations++;if(denied)throw Error('pilot_unavailable');};
+    const selection={request:selected,applied:true,reason:'verified_context_quality',protected:[],excluded:[],validateOriginals,
+      ...(verified?{verifyForwarded:()=>{comparisons++;validateOriginals();return true;}}:{})};
+    const ctx=responseContext({selector:{select:()=>selection},policy:()=>({schema_version:2,revision:1}),headers});
+    const pending=ctx.prepare(before);
+    assert.equal(validations,1,'post-preparation source/authority check remains');
+    denied=revoked;
+    const sent=pending.commit();
+    assert.equal(validations,2,'exactly one source/authority check at actual sink');
+    assert.equal(comparisons,verified?1:0);
+    assert.deepEqual(JSON.parse(sent),revoked?request:selected);
+    assert.equal(pending.receipt.applied,!revoked);
+  });
+});
+
+test('D02/D03: prepare binds actual appended native request and preserves every original item',async()=>{
+  const fx=await setup(),run=sourcePilot(fx),request={type:'response.create',...fx.request,input:[...fx.request.input,{type:'message',role:'user',content:[{type:'input_text',text:'Current steering'}]}]};
+  const pending=await run.flow().prepare(Buffer.from(JSON.stringify(request)));
+  assert.equal(pending.receipt.task_state_attached,true);assert.deepEqual(JSON.parse(pending.commit()).input,[...request.input,expectedStateItem(fx.state)]);
+  assert.equal(pending.receipt.ordered_context_verified,true);assert.equal(run.pilot.status().attempts,1);
+  assert.deepEqual(JSON.parse(await readFile(run.spentPath,'utf8')).packet_sha256,sha256(JSON.stringify(run.packet)));
+});
+
+test('D05: same-connection native delta reuses selected prefix until isolated revoke',async()=>{
+  const fx=await setup(),run=sourcePilot(fx),ctx=run.flow(),request={type:'response.create',...fx.request};
+  const first=await ctx.prepare(Buffer.from(JSON.stringify(request)));first.commit();
+  ctx.observe(Buffer.from(JSON.stringify({type:'response.completed',response:{id:'source-first',output:[]}})));
+  const added=message('New reference'),delta=Buffer.from(JSON.stringify({...request,previous_response_id:'source-first',input:[added]}));
+  const second=await ctx.prepare(delta);assert.ok(second.commit().equals(delta));assert.equal(second.receipt.context_prefix_reused,true);assert.equal(second.receipt.ordered_context_verified,true);
+  ctx.observe(Buffer.from(JSON.stringify({type:'response.completed',response:{id:'source-second',output:[]}})));
+  assert.equal(run.grant.approved,true);assert.ok(Date.now()<run.packet.expires_at_ms);assert.equal(run.pilot.status().attempts,1);
+  const last=message('After revoke');run.pilot.revoke();
+  const third=await ctx.prepare(Buffer.from(JSON.stringify({...request,previous_response_id:'source-second',input:[last]})));
+  assert.deepEqual(JSON.parse(third.commit()),{...request,previous_response_id:null,input:[...request.input,added,last]});assert.equal(third.receipt.full_context_restored,true);
+});
+
+test('D04: failed source spends reservation; restart/reconnect cannot issue new permission',async()=>{
+  const fx=await setup(),run=sourcePilot(fx);await unlink(fx.state.sources[0].original.path);
+  const before=Buffer.from(JSON.stringify({type:'response.create',...fx.request})),failed=await run.flow().prepare(before);
+  assert.ok(failed.commit().equals(before));assert.equal(run.pilot.status().attempts,1);
+  const restarted=createQualityPilot(run.packet,{manifest:run.manifest,spentPath:run.spentPath,approval:()=>run.grant});
+  const ctx=responseContext({selector:createMainContextSelector({prepareQualityPilot:restarted.prepare}),policy:()=>restarted.policy(),headers});
+  assert.ok((await ctx.prepare(before)).commit().equals(before));assert.equal(restarted.status().spent,true);
+});
+
+test('D01/D02: expanded/malformed source packet is rejected and foreign scope never reserves',async t=>{
+  for(const change of [{max_initial_applies:2},{operation:'duplicates'},{extra:true},{state_sha256:'f'.repeat(64)},{source_manifest_sha256:'f'.repeat(64)}]){
+    const fx=await setup();assert.throws(()=>sourcePilot(fx,{packetChange:change}),/invalid_pilot_packet/);
+  }
+  for(const kind of ['thread','model','opaque','source','grant'])await t.test(kind,async()=>{
+    const fx=await setup(kind==='source'?original():undefined,kind==='source'?{goal:'password=example'}:{}),run=sourcePilot(fx);
+    const incoming=kind==='thread'?{...headers,'thread-id':'foreign'}:headers;
+    const ctx=responseContext({selector:run.selector,policy:()=>run.pilot.policy(),headers:incoming});
+    const request={type:'response.create',...fx.request};if(kind==='model')request.model='foreign';if(kind==='opaque')request.input.push({type:'unrecognized'});if(kind==='grant')run.grant.approved=false;
+    const before=Buffer.from(JSON.stringify(request)),pending=await ctx.prepare(before);assert.ok(pending.commit().equals(before));assert.equal(pending.receipt.applied,false);
+  });
+});
+
+test('D06: changed original or revoke between prepare and actual commit cannot escape',async t=>{
+  for(const kind of ['revoke','source_changed'])await t.test(kind,async()=>{
+    const fx=await setup(),run=sourcePilot(fx),before=Buffer.from(JSON.stringify({type:'response.create',...fx.request}));
+    const pending=await run.flow().prepare(before);assert.equal(pending.receipt.applied,true);
+    if(kind==='revoke')run.pilot.revoke();else await writeFile(fx.state.sources[0].original.path,'corrupt');
+    assert.ok(pending.commit().equals(before));assert.equal(pending.receipt.applied,false);assert.notEqual(pending.receipt.ordered_context_verified,true);
+  });
+});
+
+
+test('D04/D05/D06: real WS sink proves state-only prefix reuse and explicit revoke under active lease',{timeout:10000},async t=>{
+  const fx=await setup(),run=sourcePilot(fx),request={type:'response.create',...fx.request};
+  const transport=await wsFixture(t,fx,()=>run.pilot.policy(),{prepareQualityPilot:run.pilot.prepare});
+  const first=await transport.send(Buffer.from(JSON.stringify(request)));
+  assert.deepEqual(JSON.parse(first),{...request,input:[...request.input,expectedStateItem(fx.state)]});
+  const added=message('actual socket delta'),delta=Buffer.from(JSON.stringify({...request,previous_response_id:'response-1',input:[added]}));
+  assert.ok((await transport.send(delta)).equals(delta));
+  assert.equal(transport.receipts.filter(r=>r.phase==='message_forwarded').at(-1).context_prefix_reused,true);
+  assert.equal(run.grant.approved,true);assert.equal(run.pilot.status().attempts,1);assert.ok(Date.now()<run.packet.expires_at_ms);
+  run.pilot.revoke();const last=message('after actual revoke');
+  const restored=await transport.send(Buffer.from(JSON.stringify({...request,previous_response_id:'response-2',input:[last]})));
+  assert.deepEqual(JSON.parse(restored),{...request,previous_response_id:null,input:[...request.input,added,last]});
+  const forwarded=transport.receipts.filter(r=>r.phase==='message_forwarded');
+  assert.ok(forwarded.slice(0,2).every(r=>r.ordered_context_verified===true&&r.upstream_body_written===true));
+  assert.equal(forwarded[2].full_context_restored,true);
+  assert.equal(forwarded[2].ordered_context_verified,true);
+  assert.ok(transport.receipts.some(r=>r.phase==='response_completed'&&r.message_sequence===3&&r.provider_completed===true));
+  assert.doesNotMatch(JSON.stringify(transport.receipts),/Finish fixture|quality-fixture-account|\.original/);
+});
+
+test('D04/D05: reconnect and unknown continuation never inherit active authority',async()=>{
+  const fx=await setup(),run=sourcePilot(fx),ctx=run.flow(),request={type:'response.create',...fx.request},before=Buffer.from(JSON.stringify(request));
+  (await ctx.prepare(before)).commit();ctx.observe(Buffer.from(JSON.stringify({type:'response.completed',response:{id:'known',output:[]}})));
+  assert.ok((await run.flow().prepare(before)).commit().equals(before));
+  const unknown=await ctx.prepare(Buffer.from(JSON.stringify({...request,previous_response_id:'unknown',input:[message('new')]})));
+  assert.equal(unknown.payload,null);
+  assert.throws(()=>createQualityPilot(run.packet,{manifest:run.manifest,spentPath:join(fx.dir,'other-spent.json'),approval:()=>run.grant}),/invalid_pilot_packet/);
+});
+
+test('D06: selected-state tampering and concurrent request mutation fail before commit',async()=>{
+  const fx=await setup(),run=sourcePilot(fx),request={type:'response.create',...fx.request};
+  const selection=await run.selector.select(request,headers,run.pilot.policy(),{connection:{},inherited:false});
+  assert.equal(selection.applied,true);selection.request.input.at(-1).content[0].text='invented state';
+  assert.throws(()=>selection.verifyForwarded(Buffer.from(JSON.stringify(selection.request)),selection.request),/state_only_comparison_failed/);
+  const second=await setup(),other=sourcePilot(second),input={type:'response.create',...second.request};
+  const pending=other.selector.select(input,headers,other.pilot.policy(),{connection:{},inherited:false});
+  input.input.push(message('changed after prepare'));const result=await pending;
+  assert.equal(result.applied,false);assert.deepEqual(result.request,input);
+});
+
+
+test('D04/D06: schema2 monotonic expiry, approval drift and async readback revocation remain fail-closed',async t=>{
+  for(const kind of ['monotonic','grant','during_read'])await t.test(kind,async()=>{
+    const fx=await setup(),seed=sourcePilot(fx),wall=Date.now();let tick=0,grant=seed.grant;
+    const pilot=createQualityPilot(seed.packet,{manifest:seed.manifest,spentPath:seed.spentPath,now:()=>wall-600000,monotonic:()=>tick,approval:()=>grant});
+    const ctx=responseContext({selector:createMainContextSelector({prepareQualityPilot:pilot.prepare}),policy:()=>pilot.policy(),headers});
+    const before=Buffer.from(JSON.stringify({type:'response.create',...fx.request}));
+    const preparing=ctx.prepare(before);
+    if(kind==='during_read')pilot.revoke();
+    const pending=await preparing;
+    if(kind==='monotonic')tick=seed.packet.expires_at_ms-(wall-600000);
+    if(kind==='grant')grant={...grant,approved:false};
+    assert.ok(pending.commit().equals(before));assert.equal(pending.receipt.applied,false);
+  });
 });

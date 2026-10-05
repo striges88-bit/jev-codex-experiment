@@ -18,6 +18,10 @@
 !/docs/project-status.md
 !/docs/context-quality-v1.md
 !/docs/measurement-design.md
+!/docs/issue-19-completion-plan.md
+!/docs/adr/
+/docs/adr/*
+!/docs/adr/0001-source-first-native-pilot.md
 !/tasks/
 /tasks/*
 !/tasks/issue-2-contract.md

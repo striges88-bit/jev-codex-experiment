@@ -1,5 +1,17 @@
 # Issue #19: task state and exact duplicate verification
 
+## Applicability addendum — 2026-10-06
+
+The original 231/231 report below is historical offline/shadow evidence. The approved [source-first pilot ADR](adr/0001-source-first-native-pilot.md) and [ordered completion plan](issue-19-completion-plan.md) record the later schema2 state-only implementation and two small architecture changes. Current focused gateway/WS gate: **184/184 PASS**; full `npm test`: **271/271 PASS**, exit 0, no skips. Native Desktop acceptance remains PARTIAL; the final #19 marker stays unchecked.
+
+Ordinary schema2 filter still returns full unless a separately configured trusted local pilot callback has exact approval. Schema2 source-first preparation binds the actual request inside its frozen source/task/thread/scope, never from incoming metadata. The ordinary launcher does not install that callback. Legacy schema1 and the existing `qualityBinding`/inventory exports remain available; their implementation is shared in `main-context-contract.mjs`. Pilot code pins include that module, so previous code-pinned packets become stale.
+
+The original selector below appends state after surviving input. The new state-only continuation path instead retains the initial insertion position; new items and all original history remain ordered, permitting unchanged selected-prefix reuse. State source format and model-visible representation are unchanged. Post-preparation validation and actual-sink validation remain; `verifyForwarded` contains the latter source/authority check, so it is not repeated immediately beside it.
+
+LP01/LP03 now use full ordered runtime history comparison and correlated actual-write/completion receipts with durable chosen-source readback. **The full conversation is not archived for later independent replay.** The user approved this evidence-method amendment; future executable packets must declare it. State-only does not prove LP02 or close #19. Older captures/packets/results remain dated and spent attempts are not rerun.
+
+## Original offline/shadow report — 2026-10-05
+
 Scope: offline/shadow implementation at the existing selector → actual HTTP/WS forwarding seam. Desktop pilot, production promotion, full supersession, independent hold-out, net token savings and latency gates remain separate. Main baseline: `2772bb3`.
 
 ## Versioned coordinator contract

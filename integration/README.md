@@ -330,9 +330,15 @@ inventory/protection and state payload identity. Any append/drift needs new proo
 State is a sourced factual assistant message; existing protected state survives
 refresh. Semantic summaries/pruning and full supersession are outside this branch.
 
-Schema 2 filter is available only to explicitly offline selectors or the existing
-loopback `testUpstream` gateway fixture. Default production configuration remains
-unchanged; schema 2 shadow forwards exact original wire. Legacy schema 1 remains
+Schema 2 filter remains off in the normal Desktop launcher. Offline selectors and
+loopback `testUpstream` fixtures retain their existing behavior. A separate local
+coordinator may pass `authorizeQualityPilot` from `createQualityPilot`: one attempt,
+an explicitly approved packet hash, exact thread/scope/inventory/policy/code
+hashes, a lifetime of at most15minutes and repeated expiry/revocation checks at
+the actual sink. Missing or stale approval preserves full input; failed
+selection/readback spends the attempt. Request fields and global opt-in cannot
+open this gate. An unconfigured owner leaves production filtering disabled.
+Schema 2 shadow forwards exact original wire. Legacy schema 1 remains
 distinct. HTTP/zstd and async WS readbacks finish before forwarding; authority and
 original bytes are checked again at the actual write. WS revoke restores a known
 original chain, or closes an unavailable chain instead of forwarding a hidden
@@ -344,3 +350,13 @@ separate gates.
 
 Design provenance/caveats: `tasks/main-context-research/report.md`; current local
 acceptance and Desktop gate: `tasks/main-context-gateway/contract.md`.
+
+## Current-request state-only pilot (schema2)
+
+`createQualityPilot` retains schema1 and adds schema2 source-first preparation. Trusted callers supply a frozen source manifest, absolute spentPath and approval callback; `pilot.policy()` and `pilot.prepare` wire into `createMainGateway({policy:pilot.policy,prepareQualityPilot:pilot.prepare})`. The private WS connection token and completed original prefix come from responseContext, not request text. HTTP has no such continuity authority and stays full.
+
+Schema2 packet fixes task/thread/scope, manifest/state/code hashes, resolved spent-path hash,15-minute expiry and one initial state-only apply. Source manifest schema1 holds task_id, inventory_revision and complete existing sourced-state template without runtime binding_sha256; protected_occurrences must be empty because state-only retains every item. Canonical hashes use JSON.stringify with recorded key order. Unknown fields/version reject. A failed inventory/readback spends the durable wx reservation; restart/reconnect cannot issue another initial apply. Eligible continuation retains the same state insertion position and all new items, allowing unchanged native delta reuse until explicit revoke. Revoke restores a known full original chain or closes unknown chains; no duplicate permission is generated.
+
+Chosen sources receive exact independent reads and secret preflight. Full history stays in connection memory; actual sink probes compare ordered original/selected items and payload bytes. Receipts expose ordered_context_verified only on this path, with no raw history/state/auth or artifact paths. Source originals remain durable. This proves local mechanics; native Desktop acceptance and any exact live launch require a separate frozen packet/grant.
+
+Inventory, scope, binding and state representation are shared in `main-context-contract.mjs`; existing `main-context.mjs` inventory/scope and `context-quality.mjs` binding exports are retained. Pilot code hashes include the shared module. Final WS forwarding uses the complete `verifyForwarded` source/authority/payload check when present, and `validateOriginals` otherwise; the post-preparation and actual-sink boundaries remain separate. No full conversation archive for later independent replay is provided. See [ADR 0001](../docs/adr/0001-source-first-native-pilot.md) and the [ordered #19 completion plan](../docs/issue-19-completion-plan.md). Native acceptance remains pending; publication does not install or activate a pilot callback.

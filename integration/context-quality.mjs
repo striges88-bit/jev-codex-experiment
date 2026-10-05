@@ -2,29 +2,14 @@ import {dirname} from 'node:path';
 import {readFileSync,lstatSync} from 'node:fs';
 import {sha256} from './context-binding.mjs';
 import {createOriginalStore} from './compact-output.mjs';
-import {mainInventory,mainScope} from './main-context.mjs';
+import {mainScope,qualityBinding,qualityStateItem as stateItem} from './main-context-contract.mjs';
+export {qualityBinding} from './main-context-contract.mjs';
 
 const object=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 const hash=value=>sha256(JSON.stringify(value));
 const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 const fail=reason=>{throw Error(reason);};
 const fields=['goal','requirements','frozen_criteria','decisions','verified_results','unfinished','readback_links'];
-const occurrence=(binding,index,group)=>`${binding}:${index}:${group.start}:${group.end}:${group.sha256}`;
-const stateItem=state=>({type:'message',role:'assistant',content:[{type:'output_text',text:'JEV task state v1 (required context):\n'+JSON.stringify({
-  schema_version:state.schema_version,task_id:state.task_id,revision:state.revision,data:state.data,field_sources:state.field_sources,empty_fields:state.empty_fields,sources:state.sources})}]});
-
-// Coordinator inventory revision is explicit. Append, protection and scope drift
-// all change this binding; identical content never supplies occurrence authority.
-export function qualityBinding(request,headers,task_id,inventory_revision,state) {
-  if(typeof task_id!=='string'||!task_id||typeof inventory_revision!=='string'||!inventory_revision)fail('invalid_identity');
-  const inventory=mainInventory(request),scope_sha256=mainScope(request,headers);
-  if(!scope_sha256)fail('scope_unavailable');
-  if(!object(state)||!Number.isSafeInteger(state.revision)||state.revision<1)fail('invalid_state_revision');
-  const state_revision=state.revision,state_sha256=hash(stateItem(state));
-  const binding_sha256=hash({schema_version:2,task_id,inventory_revision,state_revision,state_sha256,scope_sha256,...inventory});
-  return {schema_version:2,task_id,inventory_revision,state_revision,state_sha256,scope_sha256,input_sha256:inventory.input_sha256,
-    item_hashes:inventory.item_hashes,binding_sha256,occurrences:inventory.groups.map((group,index)=>({id:occurrence(binding_sha256,index,group),...group}))};
-}
 
 function pointer(value,path) {
   if(typeof path!=='string'||!path.startsWith('/'))fail('invalid_source_pointer');
@@ -39,7 +24,8 @@ function pointer(value,path) {
 
 // Entire v2 branch is async only because originals must actually be read. Legacy
 // selection stays synchronous. This branch is never selected by incoming text.
-export async function selectQuality(request,headers,policy,{allowOfflineFilter=false}={}) {
+export async function selectQuality(request,headers,policy,{allowOfflineFilter=false,authorizeQualityPilot=null,
+    stateInsertAt,verifyStateOnly=false,validateSource=null}={}) {
   const originalRequest=request;let requestKey;
   const full=reason=>({request:originalRequest,applied:false,request_changed:false,task_state_attached:false,duplicate_removed:false,reason,excluded:[],protected:[]});
   try {
@@ -48,7 +34,10 @@ export async function selectQuality(request,headers,policy,{allowOfflineFilter=f
     requestKey=JSON.stringify(request);
     request=structuredClone(request);
     if(policy.schema_version!==2||policy.enabled!==true||!['shadow','filter'].includes(policy.mode)||
-        policy.mode==='filter'&&!allowOfflineFilter||policy.approval_id!=='global-jev-opt-in-20261003')return full('disabled_or_passthrough');
+        policy.approval_id!=='global-jev-opt-in-20261003')return full('disabled_or_passthrough');
+    const pilotCheck=policy.mode==='filter'&&!allowOfflineFilter&&typeof authorizeQualityPilot==='function'
+      ?authorizeQualityPilot(request,headers,policy):null;
+    if(policy.mode==='filter'&&!allowOfflineFilter&&typeof pilotCheck!=='function')return full('disabled_or_passthrough');
     if(!Number.isSafeInteger(policy.revision)||policy.revision<1||!Array.isArray(policy.bindings))fail('invalid_policy');
     const matches=policy.bindings.filter(row=>row?.scope_sha256===mainScope(request,headers));
     if(matches.length!==1)fail('binding_unavailable');
@@ -66,6 +55,7 @@ export async function selectQuality(request,headers,policy,{allowOfflineFilter=f
       if(!object(reference)||typeof reference.path!=='string')fail('readback_unavailable');
       const value=await createOriginalStore(dirname(reference.path)).read(reference);
       if(value.stderr.length)fail('unexpected_original_stderr');
+      validateSource?.(value.stdout);
       // Two independent store reads prove bytes, not merely reference hashes.
       const again=await createOriginalStore(dirname(reference.path)).read(reference);
       if(!value.stdout.equals(again.stdout)||!value.stderr.equals(again.stderr)||!equal(value.provenance,again.provenance))fail('readback_changed');
@@ -139,9 +129,14 @@ export async function selectQuality(request,headers,policy,{allowOfflineFilter=f
     const item=stateItem(state);
     const attached=!request.input.some(value=>equal(value,item));
     const kept=request.input.filter((_,index)=>!indices.has(index));
-    const selected={...request,input:attached?[...kept,item]:kept};
+    const insertion=stateInsertAt===undefined?kept.length:stateInsertAt;
+    if(!Number.isSafeInteger(insertion)||insertion<0||insertion>kept.length||
+      verifyStateOnly&&(indices.size||!attached))fail('invalid_state_insertion');
+    const selectedInput=[...kept];if(attached)selectedInput.splice(insertion,0,item);
+    const selected={...request,input:selectedInput};
     const shadow=policy.mode==='shadow';
     const validateOriginals=()=>{
+      pilotCheck?.();
       if(JSON.stringify(originalRequest)!==requestKey)fail('request_changed_before_write');
       for(const ref of references.values()) {
         if(lstatSync(ref.path).isSymbolicLink())fail('original_symlink');
@@ -150,9 +145,18 @@ export async function selectQuality(request,headers,policy,{allowOfflineFilter=f
       }
     };
     validateOriginals();
+    const selectedKey=JSON.stringify(selected);
+    const verifyForwarded=verifyStateOnly?(bytes,expected)=>{
+      validateOriginals();
+      if(JSON.stringify(selected)!==selectedKey||!equal(JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes)),expected)||
+        !equal(selected.input.filter((_,index)=>index!==insertion),request.input)||
+        !equal({...selected,input:request.input},request))fail('state_only_comparison_failed');
+      return true;
+    }:null;
     return {request:shadow?request:selected,applied:!shadow&&(attached||indices.size>0),request_changed:!shadow&&(attached||indices.size>0),
       task_state_attached:!shadow&&attached,duplicate_removed:!shadow&&indices.size>0,reason:shadow?'shadow':'verified_context_quality',excluded:shadow?[]:[...remove],
       would_exclude:shadow?[...remove]:[],would_attach_state:shadow&&attached,protected:actual.occurrences.filter(row=>row.protected||state.protected_occurrences.includes(row.id)).map(row=>row.sha256),
-      scope_sha256:actual.scope_sha256,revision:policy.revision,state_revision:state.revision,state_sha256:hash(item),reconstruction,validateOriginals};
+      scope_sha256:actual.scope_sha256,revision:policy.revision,state_revision:state.revision,state_sha256:hash(item),reconstruction,validateOriginals,
+      ...(verifyForwarded?{verifyForwarded}:{})};
   } catch(error) {return full(['inventory_changed','binding_unavailable','disabled_or_passthrough'].includes(error.message)?error.message:'context_quality_unavailable');}
 }
