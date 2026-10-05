@@ -8,7 +8,7 @@ import { resolve, dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { sha256 } from './context-binding.mjs';
 import { createMainContextSelector, mainInventory, mainScope } from './main-context.mjs';
-import { websocketText } from './websocket-context.mjs';
+import { websocketText, encodeTextFrame } from './websocket-context.mjs';
 import { responseContext } from './response-context.mjs';
 import { secretSuspected } from './schema.mjs';
 
@@ -50,7 +50,7 @@ export function createMainGateway({ capability, policy = () => null, receipt = (
       target.pathname !== '/' || target.search || target.hash ||
       (testUpstream && !['127.0.0.1','localhost'].includes(target.hostname))) throw Error('invalid_upstream');
   const request = target.protocol === 'https:' ? https.request : http.request;
-  const selector = createMainContextSelector();
+  const selector = createMainContextSelector({allowOfflineFilter:testUpstream});
   const sockets = new Set();
   const safeReceipt = row => { try { receipt(row); } catch { /* telemetry cannot alter transport */ } };
   const allowed = req => !req.headers.origin &&
@@ -64,7 +64,7 @@ export function createMainGateway({ capability, policy = () => null, receipt = (
       protected:[], excluded:[], upstream_status:null, completed:false, upstream_body_written:false,
       provider_usage:null, cost_usd:null },req.headers);
     const { row, finish } = observation;
-    let original, forwarded, outgoing;
+    let original, forwarded, outgoing,commitCheck=null;
     res.on('finish',() => { row.completed = true; finish(); });
     res.on('close',() => { outgoing?.destroy(); if (!res.writableFinished) row.reason = 'client_disconnected'; finish(); });
     try {
@@ -87,19 +87,26 @@ export function createMainGateway({ capability, policy = () => null, receipt = (
             row.input_sha256 = inventory.input_sha256;
             row.groups = inventory.groups;
           } catch { row.inventory_status = 'unknown'; }
-          const currentPolicy = policy();
-          const selection = selector.select(body,req.headers,currentPolicy);
+          const currentPolicy = policy(),authorityKey=JSON.stringify(currentPolicy);
+          const selection = body.generate===false?{request:body,applied:false,reason:'warmup',protected:[],excluded:[]}:
+            await selector.select(body,req.headers,currentPolicy);
           // Re-read trusted authority immediately before committing the outgoing copy.
-          if (JSON.stringify(policy()) !== JSON.stringify(currentPolicy)) throw Error('authority_changed');
+          commitCheck=()=>{if(JSON.stringify(policy())!==authorityKey)throw Error('authority_changed');selection.validateOriginals?.();};
+          commitCheck();
           row.reason = selection.reason; row.protected = selection.protected; row.excluded = selection.excluded;
           row.scope_sha256 = selection.scope_sha256 ?? row.scope_sha256 ?? null; row.policy_revision = selection.revision ?? null;
+          Object.assign(row,{request_changed:selection.applied,task_state_attached:selection.task_state_attached??false,
+            duplicate_removed:selection.duplicate_removed??false,would_exclude:selection.would_exclude??[],would_attach_state:selection.would_attach_state??false,
+            state_sha256:selection.state_sha256??null,state_revision:selection.state_revision??null});
           if (selection.applied) {
             const selected = Buffer.from(JSON.stringify(selection.request));
             forwarded = encoding === 'zstd' ? zstdCompressSync(selected) : selected;
             row.applied = true;
           }
-        } catch { row.reason = 'preserve_full'; row.applied = false; row.excluded = []; forwarded = original; }
+        } catch { Object.assign(row,{reason:'preserve_full',applied:false,request_changed:false,task_state_attached:false,duplicate_removed:false,excluded:[]});forwarded = original;commitCheck=null; }
       }
+      // No await between the final authority/original checks and outgoing.end.
+      try{commitCheck?.();}catch{forwarded=original;Object.assign(row,{reason:'preserve_full',applied:false,request_changed:false,task_state_attached:false,duplicate_removed:false,excluded:[]});}
       row.after_bytes = forwarded.length; row.after_sha256 = sha256(forwarded);
       headers['content-length'] = String(forwarded.length);
       if (req.aborted || res.destroyed) return;
@@ -155,14 +162,23 @@ export function createMainGateway({ capability, policy = () => null, receipt = (
       observer.on('error',()=>context.invalidate());observer.resume();
       peer.on('data',chunk=>observer.write(chunk));peer.on('close',()=>observer.end());
       if(upstreamHead.length){observer.write(upstreamHead);socket.write(upstreamHead);}
-      const pendingWrites=new WeakMap();let messageRow,sequence=0;
-      const transform=websocketText({masked:true,canPassthrough:()=>context.safeForOpaque(),rewrite:before=>{
-        const prepared=context.prepare(before);
-        messageRow=prepared.receipt?{...row,...prepared.receipt,phase:'message_forwarded',message_sequence:++sequence,observed_at:new Date().toISOString(),
+      const pendingWrites=new WeakMap();let messagePrepared,sequence=0;
+      const transform=websocketText({masked:true,canPassthrough:()=>context.safeForOpaque(),rewrite:async before=>{
+        const prepared=await context.prepare(before);
+        messagePrepared=prepared;
+        const messageRow=prepared.receipt?{...row,...prepared.receipt,phase:'message_forwarded',message_sequence:++sequence,observed_at:new Date().toISOString(),
           before_sha256:sha256(before),before_bytes:before.length,completed:false,upstream_body_written:false}:null;
+        prepared.messageRow=messageRow;
         return prepared.payload;
-      },forwarded:(wire,before,after)=>{if(messageRow){Object.assign(messageRow,{after_sha256:sha256(after),after_bytes:after.length});pendingWrites.set(wire,messageRow);messageRow=null;}}});
-      const sink=new Writable({write(chunk,_encoding,done){peer.write(chunk,error=>{const sent=pendingWrites.get(chunk);if(!error&&sent)safeReceipt({...sent,upstream_body_written:true});done(error);});}});
+      },forwarded:(wire,before,after,original)=>{if(messagePrepared?.messageRow)pendingWrites.set(wire,{prepared:messagePrepared,before,after,original});messagePrepared=null;}});
+      const sink=new Writable({write(chunk,_encoding,done){
+        const sent=pendingWrites.get(chunk);let outgoing=chunk;
+        try{if(sent){const after=sent.prepared.commit?sent.prepared.commit():sent.after;if(!after)throw Error('context_chain_unavailable');
+          if(!after.equals(sent.after))outgoing=after.equals(sent.before)?sent.original:encodeTextFrame(after,true);
+          Object.assign(sent.prepared.messageRow,sent.prepared.receipt,{after_sha256:sha256(after),after_bytes:after.length});}}
+        catch{done(Error('context_chain_unavailable'));return;}
+        peer.write(outgoing,error=>{if(!error&&sent)safeReceipt({...sent.prepared.messageRow,upstream_body_written:true});done(error);});
+      }});
       pipeline(transform,sink,error=>{if(error){row.reason=error.message==='context_chain_unavailable'?'context_chain_unavailable':'stream_interrupted';socket.destroy();peer.destroy();finish();}});
       if(head.length)transform.write(head);socket.pipe(transform);peer.pipe(socket);
     });

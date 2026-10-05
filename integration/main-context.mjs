@@ -1,4 +1,5 @@
 import { sha256 } from './context-binding.mjs';
+import { selectQuality } from './context-quality.mjs';
 
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 const hash = value => sha256(JSON.stringify(value));
@@ -26,7 +27,7 @@ const itemText = item => item.type?.endsWith('_output') ? typeof item.output==='
   item.type === 'function_call' ? item.arguments : item.type === 'custom_tool_call' ? item.input :
   opaqueProtected(item) ? '' : textParts(item.content);
 // Extra conservative evidence protection, in addition to default-protected items.
-const essential = /\b(?:must|required|error|failed|exception|pending|unfinished|TODO)\b|(?:нужно|нельзя|обязатель|требован|ошибк|не заверш|не готов|не выполн)|(?:[A-Za-z]:[\\/]|https?:\/\/|\b(?:git|npm|node|rg|pwsh)\s)/iu;
+const essential = /\b(?:MUST_KEEP|must|required|error|failed|exception|pending|unfinished|TODO)\b|(?:нужно|нельзя|обязатель|требован|ошибк|не заверш|не готов|не выполн)|(?:[A-Za-z]:[\\/]|https?:\/\/|\b(?:git|npm|node|rg|pwsh)\s)/iu;
 
 export function mainScope(request, headers) {
   const thread = headers['thread-id'] ?? headers['session-id'];
@@ -94,14 +95,16 @@ export function mainInventory(request) {
 
 // This policy is coordinator-owned local data. It never comes from HTTP body,
 // model recommendations, user-like text inside a tool result, or subagent Choice.
-export function createMainContextSelector() {
+export function createMainContextSelector(options={}) {
   const cache = new Map();
   return {
     clear() { cache.clear(); },
     select(request, headers, policy) {
+      if(policy?.schema_version===2)return selectQuality(request,headers,policy,options);
       let inventory, scope;
       const full = reason => ({ request, applied: false, reason, excluded: [], protected: inventory?.groups.filter(g => g.protected).map(g => g.sha256) ?? [] });
       try {
+        if(policy?.schema_version===1&&policy.bindings?.some(row=>row&&['state','duplicates','deliveries','occurrences','binding_sha256','state_sha256'].some(key=>Object.hasOwn(row,key))))return full('invalid_binding');
         if (!policy || policy.schema_version !== 1 || policy.enabled !== true ||
             !['shadow','filter'].includes(policy.mode) || policy.approval_id !== 'global-jev-opt-in-20261003' ||
             !Number.isSafeInteger(policy.revision) || policy.revision < 1 || !Array.isArray(policy.bindings)) return full('disabled_or_passthrough');

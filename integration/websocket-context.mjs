@@ -3,9 +3,7 @@ import { randomBytes } from 'node:crypto';
 
 // RFC6455 text-message boundary. No context size cap. Unsupported wire forms
 // switch to byte-exact passthrough; they never become partially rewritten JSON.
-export function websocketText({ masked, rewrite = value => value, forwarded = () => {}, unsupported=()=>{}, canPassthrough=()=>true }) {
-  let buffer=Buffer.alloc(0), fragments=[], payloads=[], opaque=false;
-  const frame = payload => {
+export function encodeTextFrame(payload,masked) {
     const head=Buffer.alloc(payload.length<126?2:payload.length<65536?4:10);head[0]=0x81;
     if(payload.length<126)head[1]=payload.length;
     else if(payload.length<65536){head[1]=126;head.writeUInt16BE(payload.length,2);}
@@ -14,9 +12,12 @@ export function websocketText({ masked, rewrite = value => value, forwarded = ()
     head[1]|=128;const key=randomBytes(4), encoded=Buffer.from(payload);
     for(let i=0;i<encoded.length;i++)encoded[i]^=key[i%4];
     return Buffer.concat([head,key,encoded]);
-  };
+}
+export function websocketText({ masked, rewrite = value => value, forwarded = () => {}, unsupported=()=>{}, canPassthrough=()=>true }) {
+  let buffer=Buffer.alloc(0), fragments=[], payloads=[], opaque=false;
+  const frame = payload => encodeTextFrame(payload,masked);
   return new Transform({
-    transform(chunk,_encoding,done) {
+    async transform(chunk,_encoding,done) {
       const preserve = () => {unsupported();if(!canPassthrough())throw Error('context_chain_unavailable');opaque=true;this.push(Buffer.concat([...fragments,buffer]));buffer=Buffer.alloc(0);fragments=[];payloads=[];};
       if(opaque){this.push(chunk);done();return;}
       buffer=Buffer.concat([buffer,chunk]);
@@ -39,11 +40,11 @@ export function websocketText({ masked, rewrite = value => value, forwarded = ()
           fragments.push(wire);payloads.push(payload);
           if(!fin)continue;
           const before=Buffer.concat(payloads), original=Buffer.concat(fragments);
-          let after;try{after=rewrite(before);}catch{if(!canPassthrough())throw Error('context_chain_unavailable');after=before;}
+          let after;try{after=await rewrite(before);}catch{if(!canPassthrough())throw Error('context_chain_unavailable');after=before;}
           if(after===null){done(Error('context_chain_unavailable'));return;}
           if(!Buffer.isBuffer(after))after=before;
           const outgoing=after.equals(before)?original:frame(after);
-          forwarded(outgoing,before,after);this.push(outgoing);fragments=[];payloads=[];
+          forwarded(outgoing,before,after,original);this.push(outgoing);fragments=[];payloads=[];
         }
         done();
       }catch(error){done(error);}

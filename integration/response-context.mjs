@@ -37,22 +37,45 @@ export function responseContext({selector,policy,headers,inspect=()=>{}}) {
         Object.assign(receipt,{input_sha256:inventory.input_sha256,groups:inventory.groups,scope_sha256:scope,inventory_status:'complete',original_input_items:original.input.length});
         try{inspect(original,inventory,scope);}catch{/* inspection never grants authority */}
       }catch(error){receipt.inventory_status='unknown';receipt.inventory_reason=['unknown_content','unknown_item','invalid_call_graph','opaque_or_unknown_item','incomplete_inventory'].includes(error.message)?error.message:'unknown';}
-      let selection;
+      let selection,authorityKey;
+      const preserve=()=>({request:original,applied:false,reason:'preserve_full',protected:[],excluded:[]});
       try{
         const current=policy();
+        authorityKey=JSON.stringify(current);
         selection=body.generate===false?{request:original,applied:false,reason:'warmup',protected:[],excluded:[]}:selector.select(original,headers,current);
-        if(JSON.stringify(policy())!==JSON.stringify(current))throw Error('authority_changed');
-      }catch{selection={request:original,applied:false,reason:'preserve_full',protected:[],excluded:[]};}
+      }catch{selection=preserve();}
+      const complete=selection=>{
+      try{if(authorityKey!==undefined&&JSON.stringify(policy())!==authorityKey)throw Error('authority_changed');selection.validateOriginals?.();}
+      catch{selection=preserve();}
       Object.assign(receipt,{reason:selection.reason,applied:selection.applied,protected:selection.protected,excluded:selection.excluded,would_exclude:selection.would_exclude??[],policy_revision:selection.revision??null,
-        full_context_restored:inherited&&!selection.applied});
-      const signature=sha256(JSON.stringify({scope:receipt.scope_sha256,revision:selection.revision,excluded:selection.excluded}));
+        full_context_restored:inherited&&!selection.applied,task_state_attached:selection.task_state_attached??false,duplicate_removed:selection.duplicate_removed??false,
+        would_attach_state:selection.would_attach_state??false,state_sha256:selection.state_sha256??null,state_revision:selection.state_revision??null});
+      const signature=sha256(JSON.stringify({scope:receipt.scope_sha256,revision:selection.revision,excluded:selection.excluded,state:selection.state_sha256}));
       const reuse=selection.applied&&inherited&&last.signature===signature&&
         sha256(JSON.stringify(selection.request.input))===sha256(JSON.stringify([...last.selected_input,...last.output,...body.input]));
-      Object.assign(receipt,{context_selected:selection.applied,incremental_reused:reuse,applied:selection.applied&&!reuse});
+      Object.assign(receipt,{context_selected:selection.applied,incremental_reused:reuse,context_prefix_reused:reuse,applied:selection.applied&&!reuse});
       const changed=selection.applied&&!reuse||inherited&&!selection.applied;
-      pending={input:original.input,selected_input:selection.request.input,signature,filtered:selection.applied,output:[],warmup:body.generate===false};
+      receipt.request_changed=changed;receipt.task_state_attached&&=!reuse;receipt.duplicate_removed&&=!reuse;
+      const entry={input:original.input,selected_input:selection.request.input,signature,filtered:selection.applied,output:[],warmup:body.generate===false};
+      pending=entry;
+      const previousEver=everFiltered;
       everFiltered||=selection.applied;
-      return {payload:changed?Buffer.from(JSON.stringify(selection.request)):before,receipt};
+      const payload=changed?Buffer.from(JSON.stringify(selection.request)):before;
+      // Called by the actual WS sink, including after downstream backpressure.
+      // Revocation can restore a known chain; unknown chains were rejected above.
+      const commit=()=>{
+        try{if(authorityKey!==undefined&&JSON.stringify(policy())!==authorityKey)throw Error('authority_changed');selection.validateOriginals?.();return payload;}
+        catch{
+          if(pending!==entry)throw Error('context_chain_unavailable');
+          entry.selected_input=original.input;entry.filtered=false;entry.signature=null;everFiltered=previousEver;
+          Object.assign(receipt,{reason:'preserve_full',applied:false,request_changed:inherited,task_state_attached:false,duplicate_removed:false,excluded:[],
+            context_selected:false,incremental_reused:false,context_prefix_reused:false,full_context_restored:inherited});
+          return inherited?Buffer.from(JSON.stringify(original)):before;
+        }
+      };
+      return {payload,receipt,commit};
+      };
+      return selection&&typeof selection.then==='function'?selection.then(complete,()=>complete(preserve())):complete(selection);
     },
     observe(after) {
       try{

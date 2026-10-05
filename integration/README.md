@@ -320,5 +320,27 @@ no automatic Desktop interception, pilot, history reduction or efficiency
 claim follows. Small structured outputs can be larger than raw porcelain;
 net savings are unmeasured. [Acceptance report](../docs/issue-18-validation.md).
 
+### Current task state and exact duplicates (issue #19)
+
+Schema 2 is a separate coordinator-owned branch in `main-context.mjs` and
+`context-quality.mjs`. It verifies complete sourced task state and occurrence-bound
+same-artifact duplicate permission against actual schema 1 originals. The public
+`qualityBinding(request,headers,task_id,inventory_revision,state)` freezes complete
+inventory/protection and state payload identity. Any append/drift needs new proof.
+State is a sourced factual assistant message; existing protected state survives
+refresh. Semantic summaries/pruning and full supersession are outside this branch.
+
+Schema 2 filter is available only to explicitly offline selectors or the existing
+loopback `testUpstream` gateway fixture. Default production configuration remains
+unchanged; schema 2 shadow forwards exact original wire. Legacy schema 1 remains
+distinct. HTTP/zstd and async WS readbacks finish before forwarding; authority and
+original bytes are checked again at the actual write. WS revoke restores a known
+original chain, or closes an unavailable chain instead of forwarding a hidden
+prefix. Receipts distinguish state-only changes, duplicates and native prefix reuse.
+No judge call, retry or automatic GC is added. Existing `test-output.mjs read`
+reads these originals unchanged. See the complete [schema and finite validation
+report](../docs/issue-19-validation.md); Desktop pilot/promotion/benefit remain
+separate gates.
+
 Design provenance/caveats: `tasks/main-context-research/report.md`; current local
 acceptance and Desktop gate: `tasks/main-context-gateway/contract.md`.
