@@ -1,3 +1,25 @@
+# JEV-LAYER retirement notice
+
+Status is RETIRED. Development and new experiments are discontinued.
+Retirement is administrative. It does not complete functional acceptance.
+Historical PASS, PARTIAL, FAIL, and UNKNOWN results remain unchanged.
+No new execution, provider transmission, pilot, or production promotion is authorized by retirement.
+Historical export and pilot approvals are expired. They grant no new authority.
+This includes the standing TypeSafe consent described in the historical README.
+
+The accepted Codex health result is 6 PASS, 1 PARTIAL, and 4 UNKNOWN, with five deferred exceptions.
+The historical result was 6 PASS, 1 FAIL, and 4 UNKNOWN.
+Issue #19 native Desktop acceptance remains unproven. Its five checked criteria and final unchecked criterion retain their historical meaning.
+Existing acceptance checkboxes remain unchanged. Unfinished issues may close as not planned only under separate approval.
+Existing completed child issues remain completed within their accepted scope.
+Provider data retention remains unresolved. Retirement does not assert provider data deletion.
+
+The dated source below is preserved as a historical reference.
+Its continuation steps, activation instructions, consent statements, and development priorities are inactive.
+The historical text grants no authority to run its examples or revive spent packets.
+
+---
+
 # JEV-LAYER: project checkpoint — 2026-10-04
 
 ## Current addendum — 2026-10-06
